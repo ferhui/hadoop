@@ -19,6 +19,7 @@
 package org.apache.hadoop.mapreduce.lib.output;
 
 import java.io.IOException;
+import java.net.URI;
 import java.text.NumberFormat;
 
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -53,7 +54,7 @@ public abstract class FileOutputFormat<K, V> extends OutputFormat<K, V> {
     NUMBER_FORMAT.setMinimumIntegerDigits(5);
     NUMBER_FORMAT.setGroupingUsed(false);
   }
-  private FileOutputCommitter committer = null;
+  private OutputCommitter committer = null;
 public static final String COMPRESS ="mapreduce.output.fileoutputformat.compress";
 public static final String COMPRESS_CODEC = 
 "mapreduce.output.fileoutputformat.compress.codec";

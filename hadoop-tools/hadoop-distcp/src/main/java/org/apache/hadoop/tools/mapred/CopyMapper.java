@@ -118,6 +118,8 @@ public class CopyMapper extends Mapper<Text, CopyListingFileStatus, Text, Text> 
     if (conf.get(DistCpConstants.CONF_LABEL_SSL_CONF) != null) {
       initializeSSLConf(context);
     }
+
+    conf.setBoolean("job.output.oss.redirect", false);
   }
 
   /**

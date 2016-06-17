@@ -20,7 +20,16 @@ package org.apache.hadoop.mapreduce.lib.output;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.ObjectInputStream;
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
 
+import com.aliyun.oss.ClientException;
+import com.aliyun.oss.model.CompleteMultipartUploadResult;
+import com.aliyun.oss.model.PartETag;
+import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience;
@@ -31,12 +40,8 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
-import org.apache.hadoop.mapreduce.JobContext;
-import org.apache.hadoop.mapreduce.JobStatus;
-import org.apache.hadoop.mapreduce.MRJobConfig;
-import org.apache.hadoop.mapreduce.OutputCommitter;
-import org.apache.hadoop.mapreduce.TaskAttemptContext;
-import org.apache.hadoop.mapreduce.TaskAttemptID;
+import org.apache.hadoop.mapreduce.*;
+import org.apache.hadoop.mapreduce.lib.output.osslib.OSSClientAgent;
 
 /** An {@link OutputCommitter} that commits files specified 
  * in job output directory i.e. ${mapreduce.output.fileoutputformat.outputdir}.
@@ -64,9 +69,11 @@ public class FileOutputCommitter extends OutputCommitter {
   public static final String FILEOUTPUTCOMMITTER_ALGORITHM_VERSION =
       "mapreduce.fileoutputcommitter.algorithm.version";
   public static final int FILEOUTPUTCOMMITTER_ALGORITHM_VERSION_DEFAULT = 1;
-  private Path outputPath = null;
-  private Path workPath = null;
+  protected Path outputPath = null;
+  protected Path workPath = null;
   private final int algorithmVersion;
+  private Configuration conf = null;
+  private OSSClientAgent ossClientAgent = null;
 
   /**
    * Create a file output committer
@@ -94,6 +101,7 @@ public class FileOutputCommitter extends OutputCommitter {
   public FileOutputCommitter(Path outputPath, 
                              JobContext context) throws IOException {
     Configuration conf = context.getConfiguration();
+    this.conf = conf;
     algorithmVersion =
         conf.getInt(FILEOUTPUTCOMMITTER_ALGORITHM_VERSION,
                     FILEOUTPUTCOMMITTER_ALGORITHM_VERSION_DEFAULT);
@@ -118,7 +126,7 @@ public class FileOutputCommitter extends OutputCommitter {
   /**
    * @return true if we have an output path set, else false.
    */
-  private boolean hasOutputPath() {
+  protected boolean hasOutputPath() {
     return this.outputPath != null;
   }
   
@@ -276,7 +284,7 @@ public class FileOutputCommitter extends OutputCommitter {
    * @return the list of these Paths/FileStatuses. 
    * @throws IOException
    */
-  private FileStatus[] getAllCommittedTaskPaths(JobContext context) 
+  protected FileStatus[] getAllCommittedTaskPaths(JobContext context)
     throws IOException {
     Path jobAttemptPath = getJobAttemptPath(context);
     FileSystem fs = jobAttemptPath.getFileSystem(context.getConfiguration());
@@ -323,7 +331,7 @@ public class FileOutputCommitter extends OutputCommitter {
 
       if (algorithmVersion == 1) {
         for (FileStatus stat: getAllCommittedTaskPaths(context)) {
-          mergePaths(fs, stat, finalOutput);
+          doCommitJob(fs, stat, finalOutput);
         }
       }
 
@@ -348,7 +356,7 @@ public class FileOutputCommitter extends OutputCommitter {
    * @param to the path data is going to.
    * @throws IOException on any error
    */
-  private void mergePaths(FileSystem fs, final FileStatus from,
+  protected void mergePaths(FileSystem fs, final FileStatus from,
       final Path to) throws IOException {
     if (LOG.isDebugEnabled()) {
       LOG.debug("Merging data from " + from + " to " + to);
@@ -412,6 +420,7 @@ public class FileOutputCommitter extends OutputCommitter {
       Path pendingJobAttemptsPath = getPendingJobAttemptsPath();
       FileSystem fs = pendingJobAttemptsPath
           .getFileSystem(context.getConfiguration());
+      cleanOSSUploadResidue(pendingJobAttemptsPath, fs);
       fs.delete(pendingJobAttemptsPath, true);
     } else {
       LOG.warn("Output Path is null in cleanupJob()");
@@ -512,6 +521,7 @@ public class FileOutputCommitter extends OutputCommitter {
         taskAttemptPath = getTaskAttemptPath(context);
       }
       FileSystem fs = taskAttemptPath.getFileSystem(context.getConfiguration());
+      cleanOSSUploadResidue(taskAttemptPath, fs);
       if(!fs.delete(taskAttemptPath, true)) {
         LOG.warn("Could not delete "+taskAttemptPath);
       }
@@ -598,6 +608,154 @@ public class FileOutputCommitter extends OutputCommitter {
       }
     } else {
       LOG.warn("Output Path is null in recoverTask()");
+    }
+  }
+
+  public OSSClientAgent getOSSClientAgent() throws Exception {
+    OSSClientAgent ossClientAgent;
+    String accessKeyId = null;
+    String accessKeySecret = null;
+    String securityToken = null;
+    String endpoint = null;
+
+    URI uri = outputPath.toUri();
+    if (uri.getHost() == null) {
+      throw new IllegalArgumentException("Invalid hostname in URI " + uri);
+    }
+    String userInfo = uri.getUserInfo();
+    if (userInfo != null) {
+      String[] ossCredentials  = userInfo.split(":");
+      if (ossCredentials.length >= 2) {
+        accessKeyId = ossCredentials[0];
+        accessKeySecret = ossCredentials[1];
+      }
+      if (ossCredentials.length == 3) {
+        securityToken = ossCredentials[2];
+      }
+    }
+
+    String bucket;
+    String host = uri.getHost();
+    if (!StringUtils.isEmpty(host) && !host.contains(".")) {
+      bucket = host;
+    } else if (!StringUtils.isEmpty(host)){
+      bucket = host.substring(0, host.indexOf("."));
+      endpoint = host.substring(host.indexOf(".")+1);
+    }
+
+    if (accessKeyId == null) {
+      accessKeyId = conf.getTrimmed("fs.oss.accessKeyId");
+    }
+    if (accessKeySecret == null) {
+      accessKeySecret = conf.getTrimmed("fs.oss.accessKeySecret");
+    }
+    if (securityToken == null) {
+      securityToken = conf.getTrimmed("fs.oss.securityToken");
+    }
+    if (endpoint == null) {
+      endpoint = conf.getTrimmed("fs.oss.endpoint");
+    }
+
+    if (securityToken == null) {
+      ossClientAgent = new OSSClientAgent(endpoint, accessKeyId, accessKeySecret, conf);
+    } else {
+      ossClientAgent = new OSSClientAgent(endpoint, accessKeyId, accessKeySecret, securityToken, conf);
+    }
+
+    return ossClientAgent;
+  }
+
+  private void doCommitJob(FileSystem fs, FileStatus stat, Path finalOutput)
+          throws IOException{
+    if (stat.isFile() && stat.getPath().getName().endsWith(".upload")) {
+      if (ossClientAgent == null) {
+        try {
+          ossClientAgent = getOSSClientAgent();
+        } catch (Exception e) {
+          LOG.error("can not initialize OSSClientAgent, "+e.getMessage());
+          throw new IOException(e);
+        }
+      }
+      InputStream in = fs.open(stat.getPath());
+      ObjectInputStream ois = new ObjectInputStream(in);
+      try {
+        String bucket = (String) ois.readObject();
+        String finalDstKey = (String) ois.readObject();
+        String uploadId = (String) ois.readObject();
+        List<SerializableETag> serializableETags = (List<SerializableETag>) ois.readObject();
+        List<PartETag> partETags = new ArrayList<PartETag>();
+        for(SerializableETag serializableETag: serializableETags) {
+          partETags.add(serializableETag.toPartETag());
+        }
+        CompleteMultipartUploadResult completeMultipartUploadResult =
+                ossClientAgent.completeMultipartUpload(bucket, finalDstKey, uploadId, partETags);
+        fs.delete(stat.getPath(), true);
+        LOG.warn("complete multi-part upload " + uploadId +
+                ": [" + completeMultipartUploadResult.getETag() + "]");
+      } catch (ClassNotFoundException e) {
+        LOG.error(e.getMessage());
+        throw new IOException("Can not read object from inputStream", e);
+      } catch (ClientException e) {
+        LOG.error(e.getMessage());
+        throw new IOException(e);
+      } finally {
+        ois.close();
+      }
+    } else if (stat.isFile()) {
+      if(fs.exists(finalOutput)) {
+        if(!fs.delete(finalOutput, true)) {
+          throw new IOException("Failed to delete "+finalOutput);
+        }
+      }
+
+      if(!fs.rename(stat.getPath(), finalOutput)) {
+        throw new IOException("Failed to rename "+stat+" to "+finalOutput);
+      }
+    } else if(stat.isDirectory()) {
+      FileStatus toStat = fs.getFileStatus(finalOutput);
+      if(toStat.isFile()) {
+        if(!fs.delete(finalOutput, true)) {
+          throw new IOException("Failed to delete "+finalOutput);
+        }
+        if(!fs.mkdirs(finalOutput)) {
+          throw new IOException("Failed to mkdirs "+finalOutput);
+        }
+      }
+      for (FileStatus subFrom : fs.listStatus(stat.getPath())) {
+        Path subTo = new Path(finalOutput, subFrom.getPath().getName());
+        doCommitJob(fs, subFrom, subTo);
+      }
+    }
+  }
+
+  private void cleanOSSUploadResidue(Path jobPath, FileSystem fs) throws IOException {
+    for(FileStatus fileStatus: fs.listStatus(jobPath)) {
+      LOG.info("cleaning "+fileStatus.getPath().getName());
+      if (fileStatus.isFile() && fileStatus.getPath().getName().endsWith(".upload")) {
+        if(ossClientAgent == null) {
+          try {
+            ossClientAgent = getOSSClientAgent();
+          } catch (Exception e) {
+            LOG.error("can not initialize OSSClientAgent, "+e.getMessage());
+            throw new IOException(e);
+          }
+        }
+        InputStream in = fs.open(fileStatus.getPath());
+        ObjectInputStream ois = new ObjectInputStream(in);
+        try {
+          String bucket = (String) ois.readObject();
+          String finaleDstKey = (String) ois.readObject();
+          String uploadId = (String) ois.readObject();
+          ossClientAgent.abortMultipartUpload(bucket, finaleDstKey, uploadId);
+        } catch (ClassNotFoundException e) {
+          LOG.error(e.getMessage());
+          throw new IOException("Can not read object from inputStream", e);
+        } finally {
+          ois.close();
+        }
+      } else if (fileStatus.isDirectory()) {
+        cleanOSSUploadResidue(fileStatus.getPath(), fs);
+      }
     }
   }
 }
