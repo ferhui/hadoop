@@ -20,6 +20,7 @@ package com.aliyun.fs.oss.utils;
 import com.aliyun.oss.ClientConfiguration;
 import com.aliyun.oss.ClientException;
 import com.aliyun.oss.OSSException;
+import com.aliyun.oss.ServiceException;
 import com.aliyun.oss.model.*;
 import com.google.gson.*;
 import org.apache.commons.lang.SystemUtils;
@@ -32,6 +33,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.math.BigDecimal;
@@ -55,21 +57,27 @@ public class OSSClientAgent {
             synchronized(OSSClientAgent.class){
                 if(urlClassLoader == null){
                     try {
-                        URL internalDep = getInternalDep(conf);
+                        String[] internalDep = getInternalDep(conf);
                         ArrayList<URL> urls = new ArrayList<URL>();
                         if (internalDep != null) {
-                            urls.add(internalDep);
+                            for(String dep: internalDep) {
+                                urls.add(new URL("file://" + dep));
+                            }
                         }
                         String[] cp;
                         if (SystemUtils.IS_OS_WINDOWS) {
                             cp = System.getProperty("java.class.path").split(";");
                             for (String entity : cp) {
-                                urls.add(new URL("file:" + entity));
+                                if(!entity.contains("log4j") || conf.getBoolean("job.runlocal", false)) {
+                                    urls.add(new URL("file:" + entity));
+                                }
                             }
                         } else {
                             cp = System.getProperty("java.class.path").split(":");
                             for (String entity : cp) {
-                                urls.add(new URL("file://" + entity));
+                                if(!entity.contains("log4j") || conf.getBoolean("job.runlocal", false)) {
+                                    urls.add(new URL("file://" + entity));
+                                }
                             }
                         }
                         urlClassLoader = new URLClassLoader(urls.toArray(new URL[0]), null);
@@ -103,7 +111,7 @@ public class OSSClientAgent {
     }
 
     @SuppressWarnings("unchecked")
-    public PutObjectResult putObject(String bucket, String key, File file) throws IOException, OSSException,
+    public PutObjectResult putObject(String bucket, String key, File file) throws IOException, ServiceException,
             ClientException {
         try {
             Method method = this.ossClientClz.getMethod("putObject", String.class, String.class, File.class);
@@ -117,7 +125,7 @@ public class OSSClientAgent {
 
     @SuppressWarnings("unchecked")
     public AppendObjectResult appendObject(String bucketName, String key, File file, Long position, Configuration conf)
-            throws IOException, OSSException, ClientException {
+            throws IOException, ServiceException, ClientException {
         try {
             Class AppendObjectRequestClz = getUrlClassLoader(conf).loadClass("com.aliyun.oss.model.AppendObjectRequest");
             Constructor cons = AppendObjectRequestClz.getConstructor(String.class, String.class, File.class);
@@ -134,7 +142,7 @@ public class OSSClientAgent {
     }
 
     @SuppressWarnings("unchecked")
-    public ObjectMetadata getObjectMetadata(String bucket, String key) throws IOException, OSSException,
+    public ObjectMetadata getObjectMetadata(String bucket, String key) throws IOException, ServiceException,
             ClientException {
         try {
             GsonBuilder builder = new GsonBuilder();
@@ -202,8 +210,32 @@ public class OSSClientAgent {
     }
 
     @SuppressWarnings("unchecked")
+    public ObjectListing listObjects(String bucket) throws IOException {
+        try {
+            Method method = this.ossClientClz.getMethod("listObjects", String.class);
+            Object ret = method.invoke(this.ossClient, bucket);
+            return gson.fromJson(gson.toJson(ret), ObjectListing.class);
+        } catch (Exception e) {
+            handleException(e);
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    public ObjectListing listObjects(String bucket, String prefix) throws IOException {
+        try {
+            Method method = this.ossClientClz.getMethod("listObjects", String.class, String.class);
+            Object ret = method.invoke(this.ossClient, bucket, prefix);
+            return gson.fromJson(gson.toJson(ret), ObjectListing.class);
+        } catch (Exception e) {
+            handleException(e);
+            return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
     public ObjectListing listObjects(String bucket, String prefix, String delimiter, Integer maxListingLength,
-                                     String priorLastKey, Configuration conf) throws IOException, OSSException, ClientException {
+                                     String priorLastKey, Configuration conf) throws IOException, ServiceException, ClientException {
         try {
             Class ListObjectsRequestClz = getUrlClassLoader(conf).loadClass("com.aliyun.oss.model.ListObjectsRequest");
             Constructor cons = ListObjectsRequestClz.getConstructor(String.class);
@@ -227,7 +259,7 @@ public class OSSClientAgent {
     }
 
     @SuppressWarnings("unchecked")
-    public void deleteObject(String bucket, String key) throws IOException, OSSException, ClientException {
+    public void deleteObject(String bucket, String key) throws IOException, ServiceException, ClientException {
         try {
             Method method = this.ossClientClz.getMethod("deleteObject", String.class, String.class);
             method.invoke(this.ossClient, bucket, key);
@@ -237,7 +269,7 @@ public class OSSClientAgent {
     }
 
     @SuppressWarnings("unchecked")
-    public Boolean doesObjectExist(String bucket, String key) throws IOException, OSSException, ClientException {
+    public Boolean doesObjectExist(String bucket, String key) throws IOException, ServiceException, ClientException {
         try {
             Method method = this.ossClientClz.getMethod("doesObjectExist", String.class, String.class);
             Object ret = method.invoke(this.ossClient, bucket, key);
@@ -250,7 +282,7 @@ public class OSSClientAgent {
 
     @SuppressWarnings("unchecked")
     public InitiateMultipartUploadResult initiateMultipartUpload(String bucket, String key, Configuration conf)
-            throws IOException, OSSException, ClientException {
+            throws IOException, ServiceException, ClientException {
         try {
             Class InitiateMultipartUploadRequestClz =
                     getUrlClassLoader(conf).loadClass("com.aliyun.oss.model.InitiateMultipartUploadRequest");
@@ -269,7 +301,7 @@ public class OSSClientAgent {
     @SuppressWarnings("unchecked")
     public CompleteMultipartUploadResult completeMultipartUpload(String bucket, String key, String uploadId,
                                                                  List<PartETag> partETags, Configuration conf)
-            throws IOException, OSSException, ClientException {
+            throws IOException, ServiceException, ClientException {
         try {
             Class PartETagClz = getUrlClassLoader(conf).loadClass("com.aliyun.oss.model.PartETag");
             List<Object> tags = new ArrayList<Object>();
@@ -316,7 +348,7 @@ public class OSSClientAgent {
                                        Long beginIndex,
                                        int partNumber,
                                        File file,
-                                       Configuration conf) throws IOException, OSSException, ClientException {
+                                       Configuration conf) throws IOException, ServiceException, ClientException {
         InputStream instream = null;
         try {
             instream = new FileInputStream(file);
@@ -364,7 +396,7 @@ public class OSSClientAgent {
                                                Long partSize,
                                                Long beginIndex,
                                                int partNumber,
-                                               Configuration conf) throws IOException, OSSException,
+                                               Configuration conf) throws IOException, ServiceException,
             ClientException {
         try {
             Class UploadPartCopyRequestClz = getUrlClassLoader(conf).loadClass("com.aliyun.oss.model.UploadPartCopyRequest");
@@ -409,11 +441,16 @@ public class OSSClientAgent {
         }
     }
 
-    private void handleException(Exception e) throws IOException, OSSException, ClientException {
-        if (e.getCause() instanceof OSSException) {
-            throw new OSSException(e.getMessage(), e.getCause());
-        } else if (e.getCause() instanceof ClientException) {
-            throw new ClientException(e.getMessage(), e.getCause());
+    private void handleException(Exception e) throws IOException, ServiceException, ClientException {
+        if (e instanceof InvocationTargetException) {
+            Throwable t = ((InvocationTargetException) e).getTargetException();
+            if (t instanceof ServiceException) {
+                throw new ServiceException(t.getMessage(), t.getCause());
+            } else if (t instanceof ClientException) {
+                throw new ClientException(t.getMessage(), t.getCause());
+            } else {
+                throw new IOException(e);
+            }
         } else {
             throw new IOException(e);
         }
@@ -461,7 +498,7 @@ public class OSSClientAgent {
     }
 
     private static class ObjectMetadataDeserializer implements JsonDeserializer<ObjectMetadata> {
-        private DateFormat df = new SimpleDateFormat("MMM d, yyyy K:mm:ss a");
+        private DateFormat df = new SimpleDateFormat("MMM d, yyyy K:mm:ss a", Locale.ENGLISH);
 
         public ObjectMetadata deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context) {
             ObjectMetadata objectMetadata = new ObjectMetadata();
@@ -501,16 +538,16 @@ public class OSSClientAgent {
         }
     }
 
-    private static URL getInternalDep(Configuration conf) throws Exception {
+    private static String[] getInternalDep(Configuration conf) throws Exception {
         String internalDep = conf.get("fs.oss.sdk.dependency.path");
         Boolean runLocal = conf.getBoolean("job.runlocal", false);
         if ((internalDep == null || internalDep.isEmpty()) && !runLocal) {
             throw new RuntimeException("Job dose not run locally, set \"fs.oss.sdk.dependency.path\" first please.");
         } else if (internalDep == null || internalDep.isEmpty()) {
-            LOG.warn("\"job.runlocal\" set true.");
+            LOG.info("\"job.runlocal\" set true.");
             return null;
         } else {
-            return new URL("file://" + internalDep);
+             return internalDep.split(",");
         }
     }
 }

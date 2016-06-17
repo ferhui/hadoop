@@ -20,7 +20,7 @@ package com.aliyun.fs.oss.utils.task;
 import com.aliyun.fs.oss.utils.OSSClientAgent;
 import com.aliyun.fs.oss.utils.Result;
 import com.aliyun.fs.oss.utils.TaskEngine;
-import com.aliyun.oss.model.UploadPartCopyRequest;
+
 import com.aliyun.oss.model.UploadPartCopyResult;
 import org.apache.hadoop.conf.Configuration;
 

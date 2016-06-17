@@ -64,8 +64,6 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
     private String accessKeySecret = null;
     private String securityToken = null;
 
-    private String finalOutputPath = null;
-
     public void initialize(URI uri, Configuration conf) throws Exception {
         if (uri.getHost() == null) {
             throw new IllegalArgumentException("Invalid hostname in URI " + uri);
@@ -110,7 +108,7 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
         } else {
             this.ossClientAgent = new OSSClientAgent(endpoint, accessKeyId, accessKeySecret, securityToken, conf);
         }
-        this.finalOutputPath = conf.get(FileOutputFormat.OUTDIR);
+
         this.numCopyThreads = conf.getInt("fs.oss.multipart.thread.number", 5);
         this.maxSplitSize = conf.getLong("fs.oss.multipart.split.max.byte", 5 * 1024 * 1024L);
         this.numSplits = conf.getInt("fs.oss.multipart.split.number", numCopyThreads);
@@ -145,6 +143,70 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
             taskEngine.executeTask();
             Map<String, Object> responseMap = taskEngine.getResultMap();
             for(int i=0; i<partCount; i++) {
+                UploadPartResult uploadPartResult = (UploadPartResult)
+                        ((Result) responseMap.get(i+"")).getModels().get("uploadPartResult");
+                partETags.add(uploadPartResult.getPartETag());
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            taskEngine.shutdown();
+        }
+
+        return partETags;
+    }
+
+    public List<PartETag> multiPartFile(String finalDstKey, List<File> files, String uploadId) throws IOException {
+        Long totalContentLength = 0L;
+        for(File file: files) {
+            totalContentLength += file.length();
+        }
+        Long minSplitSize = totalContentLength / numSplitsUpperLimit + 1;
+        Long partSize = Math.max(Math.min(maxSplitSize, totalContentLength / numSplits), minSplitSize);
+        int partCount = (int) (totalContentLength / partSize);
+        if (totalContentLength % partSize != 0) {
+            partCount++;
+        }
+        LOG.info("multipart uploading, partCount" + partCount + ", partSize " + partSize);
+
+        List<Task> tasks = new ArrayList<Task>();
+        int t = 0;
+        for(File file: files) {
+            Long contentLength = file.length();
+            boolean _continue;
+            int j = 0;
+            long skipBytes;
+            long size;
+            do{
+                skipBytes = partSize * j;
+                if(partSize < contentLength - skipBytes) {
+                    if((contentLength - (skipBytes + partSize)) < 1024 * 1024) {
+                        size = contentLength - skipBytes;
+                        _continue = false;
+                    } else {
+                        size = partSize;
+                        _continue = true;
+                    }
+                } else {
+                    size = contentLength - skipBytes;
+                    _continue = false;
+                }
+                OSSPutTask ossPutTask =
+                        new OSSPutTask(ossClientAgent, uploadId, bucket, finalDstKey, size, skipBytes, t+1, file, conf);
+                ossPutTask.setUuid(t+"");
+                tasks.add(ossPutTask);
+                j++;
+                t++;
+            } while(_continue);
+        }
+
+        int realPartCount = tasks.size();
+        List<PartETag> partETags = new ArrayList<PartETag>();
+        TaskEngine taskEngine = new TaskEngine(tasks, numCopyThreads, numCopyThreads);
+        try {
+            taskEngine.executeTask();
+            Map<String, Object> responseMap = taskEngine.getResultMap();
+            for (int i = 0; i < realPartCount; i++) {
                 UploadPartResult uploadPartResult = (UploadPartResult)
                         ((Result) responseMap.get(i+"")).getModels().get("uploadPartResult");
                 partETags.add(uploadPartResult.getPartETag());
@@ -243,44 +305,87 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
 
     public void storeFile(String key, File file, boolean append)
             throws IOException {
-        BufferedInputStream in = null;
-
         try {
-            in = new BufferedInputStream(new FileInputStream(file));
             if (!append) {
                 Long fileLength = file.length();
                 if (fileLength < Math.min(maxSimplePutSize, 512 * 1024 * 1024L)) {
                     ossClientAgent.putObject(bucket, key, file);
                 } else {
-                    String finalDstFile = finalOutputPath + "/" + key.substring(key.lastIndexOf("/"));
-                    String finalDstKey = NativeOssFileSystem.pathToKey(new Path(finalDstFile));
-                    InitiateMultipartUploadResult initiateMultipartUploadResult =
-                            ossClientAgent.initiateMultipartUpload(bucket, finalDstKey, conf);
-                    String uploadId = initiateMultipartUploadResult.getUploadId();
-                    preStoreUploadId(key, finalDstKey, uploadId);
-                    List<PartETag> partETags = multiPartFile(finalDstKey, file, uploadId);
-                    storeUploadIdAndPartETag(key, finalDstKey, partETags, uploadId);
+                    // in some cases, we can not get finalOutputPath properly.
+                    // 1. hadoop DistCp: the 'OUTDIR' is useless, and the procedure is different from a normal MR job.
+                    // Each mapper do the 'copy' independently, and set the target path as Mapper arguments.
+                    // 2. hadoop fs -cp: get 'OUTDIR' null
+                    boolean redirectOutput = conf.getBoolean("job.output.oss.redirect", true);
+                    String finalOutputPath = conf.get(FileOutputFormat.OUTDIR);
+
+                    if (redirectOutput && finalOutputPath!=null) {
+                        String finalDstPath = finalOutputPath + "/" + key.substring(key.lastIndexOf("/"));
+                        String finalDstKey = NativeOssFileSystem.pathToKey(new Path(finalDstPath));
+                        InitiateMultipartUploadResult initiateMultipartUploadResult =
+                                ossClientAgent.initiateMultipartUpload(bucket, finalDstKey, conf);
+                        String uploadId = initiateMultipartUploadResult.getUploadId();
+                        preStoreUploadId(key, finalDstKey, uploadId);
+                        List<PartETag> partETags = multiPartFile(finalDstKey, file, uploadId);
+                        storeUploadIdAndPartETag(key, finalDstKey, partETags, uploadId);
+                    } else {
+                        InitiateMultipartUploadResult initiateMultipartUploadResult =
+                                ossClientAgent.initiateMultipartUpload(bucket, key, conf);
+                        String uploadId = initiateMultipartUploadResult.getUploadId();
+                        List<PartETag> partETags = multiPartFile(key, file, uploadId);
+                        ossClientAgent.completeMultipartUpload(bucket, key, uploadId, partETags, conf);
+                    }
                 }
             } else {
-                // TODO: check the oss object is appendable object or not.
-                if (!doesObjectExist(key)) {
-                    ossClientAgent.appendObject(bucket, key, file, 0L, conf);
+               throw new IOException("'append' op not supported.");
+            }
+        } catch (Exception e) {
+            handleException(e);
+        }
+    }
+
+    @Override
+    public void storeFiles(String key, List<File> files, boolean append) throws IOException {
+        try {
+            if (!append) {
+                if (files.size() == 1 && files.get(0).length() < Math.min(maxSimplePutSize, 512 * 1024 * 1024L)) {
+                    ossClientAgent.putObject(bucket, key, files.get(0));
                 } else {
-                    ObjectMetadata objectMetadata = ossClientAgent.getObjectMetadata(bucket, key);
-                    Long preContentLength = objectMetadata.getContentLength();
-                    ossClientAgent.appendObject(bucket, key, file, preContentLength, conf);
+                    StringBuilder sb = new StringBuilder();
+                    for (File file : files) {
+                        sb.append(file.getPath()).append(",");
+                    }
+                    int length = sb.toString().length();
+                    sb.deleteCharAt(length - 1);
+                    LOG.info("using multipart upload for key " + key + ", block files: " + sb.toString());
+
+                    // in some cases, we can not get finalOutputPath properly.
+                    // 1. hadoop DistCp: the 'OUTDIR' is useless, and the procedure is different from a normal MR job.
+                    // Each mapper do the 'copy' independently, and set the target path as Mapper arguments.
+                    // 2. hadoop fs -cp: get 'OUTDIR' null
+                    boolean redirectOutput = conf.getBoolean("job.output.oss.redirect", true);
+                    String finalOutputPath = conf.get(FileOutputFormat.OUTDIR);
+                    if (redirectOutput && finalOutputPath!=null) {
+                        String finalDstPath = finalOutputPath + "/" + key.substring(key.lastIndexOf("/"));
+                        String finalDstKey = NativeOssFileSystem.pathToKey(new Path(finalDstPath));
+                        InitiateMultipartUploadResult initiateMultipartUploadResult =
+                                ossClientAgent.initiateMultipartUpload(bucket, finalDstKey, conf);
+                        String uploadId = initiateMultipartUploadResult.getUploadId();
+                        preStoreUploadId(key, finalDstKey, uploadId);
+                        List<PartETag> partETags = multiPartFile(finalDstKey, files, uploadId);
+                        storeUploadIdAndPartETag(key, finalDstKey, partETags, uploadId);
+                    } else {
+                        InitiateMultipartUploadResult initiateMultipartUploadResult =
+                                ossClientAgent.initiateMultipartUpload(bucket, key, conf);
+                        String uploadId = initiateMultipartUploadResult.getUploadId();
+                        List<PartETag> partETags = multiPartFile(key, files, uploadId);
+                        ossClientAgent.completeMultipartUpload(bucket, key, uploadId, partETags, conf);
+                    }
                 }
+            } else {
+                throw new IOException("'append' op not supported.");
             }
-        } catch (ServiceException e) {
-            handleServiceException(e);
-        } finally {
-            if (in != null) {
-                try {
-                    in.close();
-                } catch (IOException e) {
-                    // ignore
-                }
-            }
+        } catch (Exception e) {
+            handleException(e);
         }
     }
 
@@ -295,8 +400,8 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
             File file = File.createTempFile("input-", ".empty", dir);
             ossClientAgent.putObject(bucket, key, file);
             file.delete();
-        } catch (ServiceException e) {
-            handleServiceException(e);
+        } catch (Exception e) {
+            handleException(e);
         }
     }
 
@@ -308,7 +413,7 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
             ObjectMetadata objectMetadata = ossClientAgent.getObjectMetadata(bucket, key);
             return new FileMetadata(key, objectMetadata.getContentLength(),
                     objectMetadata.getLastModified().getTime());
-        } catch (ServiceException e) {
+        } catch (Exception e) {
             // Following is brittle. Is there a better way?
             if (e.getMessage().contains("ResponseCode=404")) {
                 return null;
@@ -325,8 +430,8 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
             ObjectMetadata objectMetadata = ossClientAgent.getObjectMetadata(bucket, key);
             OSSObject object = ossClientAgent.getObject(bucket, key, 0, objectMetadata.getContentLength()-1, conf);
             return object.getObjectContent();
-        } catch (ServiceException e) {
-            handleServiceException(key, e);
+        } catch (Exception e) {
+            handleException(key, e);
             return null; //never returned - keep compiler happy
         }
     }
@@ -341,8 +446,31 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
             long fileSize = objectMetadata.getContentLength();
             OSSObject object = ossClientAgent.getObject(bucket, key, byteRangeStart, fileSize-1, conf);
             return object.getObjectContent();
-        } catch (ServiceException e) {
-            handleServiceException(key, e);
+        } catch (Exception e) {
+            handleException(key, e);
+            return null; //never returned - keep compiler happy
+        }
+    }
+
+    @Override
+    public InputStream retrieve(String key, long byteRangeStart, long length) throws IOException {
+        try {
+            if (!doesObjectExist(key)) {
+                return null;
+            }
+            ObjectMetadata objectMetadata = ossClientAgent.getObjectMetadata(bucket, key);
+            long fileSize = objectMetadata.getContentLength();
+            long end;
+            if (fileSize-1 >= byteRangeStart+length) {
+                end = byteRangeStart+length;
+            } else {
+                end = fileSize-1;
+            }
+
+            OSSObject object = ossClientAgent.getObject(bucket, key, byteRangeStart, end, conf);
+            return object.getObjectContent();
+        } catch (Exception e) {
+            handleException(key, e);
             return null; //never returned - keep compiler happy
         }
     }
@@ -380,8 +508,8 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
                 idx += 1;
             }
             return new PartialListing(listing.getNextMarker(), fileMetadata, listing.getCommonPrefixes().toArray(new String[0]));
-        } catch (ServiceException e) {
-            handleServiceException(e);
+        } catch (Exception e) {
+            handleException(e);
             return null; //never returned - keep compiler happy
         }
     }
@@ -389,8 +517,8 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
     public void delete(String key) throws IOException {
         try {
             ossClientAgent.deleteObject(bucket, key);
-        } catch (ServiceException e) {
-            handleServiceException(key, e);
+        } catch (Exception e) {
+            handleException(key, e);
         }
     }
 
@@ -439,20 +567,19 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
 
                 ossClientAgent.completeMultipartUpload(bucket, dstKey, uploadId, partETags, conf);
             }
-        } catch (ServiceException e) {
-            handleServiceException(srcKey, e);
+        } catch (Exception e) {
+            handleException(srcKey, e);
         }
     }
 
     public void purge(String prefix) throws IOException {
         try {
-            List<OSSObjectSummary> objects = ossClientAgent.listObjects(bucket, prefix, null, null, null, conf)
-                    .getObjectSummaries();
+            List<OSSObjectSummary> objects = ossClientAgent.listObjects(bucket, prefix).getObjectSummaries();
             for(OSSObjectSummary ossObjectSummary: objects) {
                 ossClientAgent.deleteObject(bucket, ossObjectSummary.getKey());
             }
-        } catch (ServiceException e) {
-            handleServiceException(e);
+        } catch (Exception e) {
+            handleException(e);
         }
     }
 
@@ -460,25 +587,25 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
         StringBuilder sb = new StringBuilder("OSS Native Filesystem, ");
         sb.append(bucket).append("\n");
         try {
-            List<OSSObjectSummary> objects = ossClientAgent.listObjects(bucket, null, null, null, null, conf).getObjectSummaries();
+            List<OSSObjectSummary> objects = ossClientAgent.listObjects(bucket).getObjectSummaries();
             for(OSSObjectSummary ossObjectSummary: objects) {
                 sb.append(ossObjectSummary.getKey()).append("\n");
             }
-        } catch (ServiceException e) {
-            handleServiceException(e);
+        } catch (Exception e) {
+            handleException(e);
         }
         System.out.println(sb);
     }
 
-    private void handleServiceException(String key, ServiceException e) throws IOException {
-        if ("NoSuchKey".equals(e.getErrorCode())) {
+    private void handleException(String key, Exception e) throws IOException, OssException {
+        if (e instanceof ServiceException && "NoSuchKey".equals(((ServiceException) e).getErrorCode())) {
             throw new FileNotFoundException("Key '" + key + "' does not exist in OSS");
         } else {
-            handleServiceException(e);
+            handleException(e);
         }
     }
 
-    private void handleServiceException(ServiceException e) throws IOException {
+    private void handleException(Exception e) throws IOException, OssException {
         if (e.getCause() instanceof IOException) {
             throw (IOException) e.getCause();
         }
