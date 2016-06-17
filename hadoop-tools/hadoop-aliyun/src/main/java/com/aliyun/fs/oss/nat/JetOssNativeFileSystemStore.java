@@ -317,6 +317,10 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
                     // 2. hadoop fs -cp: get 'OUTDIR' null
                     boolean redirectOutput = conf.getBoolean("job.output.oss.redirect", true);
                     String finalOutputPath = conf.get(FileOutputFormat.OUTDIR);
+                    // compatible with old hadoop configuration
+                    if (finalOutputPath == null || finalOutputPath.isEmpty()) {
+                        finalOutputPath = conf.get("mapred.output.dir");
+                    }
 
                     if (redirectOutput && finalOutputPath!=null) {
                         String finalDstPath = finalOutputPath + "/" + key.substring(key.lastIndexOf("/"));
