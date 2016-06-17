@@ -1140,7 +1140,7 @@
             <configuration>
               <rules>
                 <DependencyConvergence>
-                  <uniqueVersions>true</uniqueVersions>
+                  <uniqueVersions>false</uniqueVersions>
                 </DependencyConvergence>
               </rules>
             </configuration>
