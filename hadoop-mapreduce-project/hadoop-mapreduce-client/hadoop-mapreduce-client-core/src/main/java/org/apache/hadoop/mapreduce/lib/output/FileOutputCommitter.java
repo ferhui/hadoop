@@ -25,10 +25,10 @@ import java.io.ObjectInputStream;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
-import com.aliyun.oss.ClientException;
 import com.aliyun.oss.model.CompleteMultipartUploadResult;
-import com.aliyun.oss.model.PartETag;
+import com.aliyun.oss.model.UploadPartResult;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -42,6 +42,10 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
 import org.apache.hadoop.mapreduce.*;
 import org.apache.hadoop.mapreduce.lib.output.osslib.OSSClientAgent;
+import org.apache.hadoop.mapreduce.lib.output.osslib.Result;
+import org.apache.hadoop.mapreduce.lib.output.osslib.TaskEngine;
+import org.apache.hadoop.mapreduce.lib.output.osslib.task.OSSCommitTask;
+import org.apache.hadoop.mapreduce.lib.output.osslib.task.Task;
 
 /** An {@link OutputCommitter} that commits files specified 
  * in job output directory i.e. ${mapreduce.output.fileoutputformat.outputdir}.
@@ -74,6 +78,7 @@ public class FileOutputCommitter extends OutputCommitter {
   private final int algorithmVersion;
   private Configuration conf = null;
   private OSSClientAgent ossClientAgent = null;
+  private List<Path> uploadIdFiles = new ArrayList<Path>();
 
   /**
    * Create a file output committer
@@ -332,6 +337,38 @@ public class FileOutputCommitter extends OutputCommitter {
       if (algorithmVersion == 1) {
         for (FileStatus stat: getAllCommittedTaskPaths(context)) {
           doCommitJob(fs, stat, finalOutput);
+        }
+
+        if (ossClientAgent == null) {
+          try {
+            ossClientAgent = getOSSClientAgent();
+          } catch (Exception e) {
+            throw new IOException("Failed to initialize an OSS client", e);
+          }
+        }
+
+        if (!uploadIdFiles.isEmpty()) {
+          // use multi-thread to do multipart commit.
+          List<Task> tasks = new ArrayList<Task>();
+          for(Path uploadIdFile: uploadIdFiles) {
+            tasks.add(new OSSCommitTask(fs, ossClientAgent, uploadIdFile));
+          }
+          TaskEngine taskEngine = new TaskEngine(tasks, 10, 10);
+          try {
+            taskEngine.executeTask();
+            Map<String, Object> responseMap = taskEngine.getResultMap();
+            for(int i=0; i<tasks.size(); i++) {
+              Result result = (Result) responseMap.get(i+"");
+              if (!result.isSuccess()) {
+                throw new IOException("Failed to complete MultipartUpload");
+              }
+            }
+          } catch (InterruptedException e) {
+            LOG.error(e.getMessage(), e);
+          } finally {
+            taskEngine.shutdown();
+          }
+          uploadIdFiles.clear();
         }
       }
 
@@ -668,39 +705,7 @@ public class FileOutputCommitter extends OutputCommitter {
   private void doCommitJob(FileSystem fs, FileStatus stat, Path finalOutput)
           throws IOException{
     if (stat.isFile() && stat.getPath().getName().endsWith(".upload")) {
-      if (ossClientAgent == null) {
-        try {
-          ossClientAgent = getOSSClientAgent();
-        } catch (Exception e) {
-          LOG.error("can not initialize OSSClientAgent, "+e.getMessage());
-          throw new IOException(e);
-        }
-      }
-      InputStream in = fs.open(stat.getPath());
-      ObjectInputStream ois = new ObjectInputStream(in);
-      try {
-        String bucket = (String) ois.readObject();
-        String finalDstKey = (String) ois.readObject();
-        String uploadId = (String) ois.readObject();
-        List<SerializableETag> serializableETags = (List<SerializableETag>) ois.readObject();
-        List<PartETag> partETags = new ArrayList<PartETag>();
-        for(SerializableETag serializableETag: serializableETags) {
-          partETags.add(serializableETag.toPartETag());
-        }
-        CompleteMultipartUploadResult completeMultipartUploadResult =
-                ossClientAgent.completeMultipartUpload(bucket, finalDstKey, uploadId, partETags);
-        fs.delete(stat.getPath(), true);
-        LOG.warn("complete multi-part upload " + uploadId +
-                ": [" + completeMultipartUploadResult.getETag() + "]");
-      } catch (ClassNotFoundException e) {
-        LOG.error(e.getMessage());
-        throw new IOException("Can not read object from inputStream", e);
-      } catch (ClientException e) {
-        LOG.error(e.getMessage());
-        throw new IOException(e);
-      } finally {
-        ois.close();
-      }
+      this.uploadIdFiles.add(stat.getPath());
     } else if (stat.isFile()) {
       if(fs.exists(finalOutput)) {
         if(!fs.delete(finalOutput, true)) {
