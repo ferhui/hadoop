@@ -77,10 +77,10 @@ public class BufferReader {
     }
 
     private void initialize() {
-        for(int i=0; i<5; i++) {
+        for(int i=0; i<concurrentStreams; i++) {
             readers[i] = new ConcurrentReader(i);
         }
-        this.taskEngine = new TaskEngine(Arrays.asList(this.readers), 5, 5);
+        this.taskEngine = new TaskEngine(Arrays.asList(this.readers), concurrentStreams, concurrentStreams);
         this.taskEngine.executeTask();
     }
 
