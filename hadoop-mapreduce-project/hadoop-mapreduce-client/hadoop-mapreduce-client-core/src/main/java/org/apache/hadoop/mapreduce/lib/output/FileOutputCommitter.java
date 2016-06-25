@@ -339,15 +339,14 @@ public class FileOutputCommitter extends OutputCommitter {
           doCommitJob(fs, stat, finalOutput);
         }
 
-        if (ossClientAgent == null) {
-          try {
-            ossClientAgent = getOSSClientAgent();
-          } catch (Exception e) {
-            throw new IOException("Failed to initialize an OSS client", e);
-          }
-        }
-
         if (!uploadIdFiles.isEmpty()) {
+          if (ossClientAgent == null) {
+            try {
+              ossClientAgent = getOSSClientAgent();
+            } catch (Exception e) {
+              throw new IOException("Failed to initialize an OSS client", e);
+            }
+          }
           // use multi-thread to do multipart commit.
           List<Task> tasks = new ArrayList<Task>();
           for(Path uploadIdFile: uploadIdFiles) {

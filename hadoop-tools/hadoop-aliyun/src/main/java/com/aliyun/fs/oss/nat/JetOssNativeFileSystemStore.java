@@ -465,8 +465,8 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
             ObjectMetadata objectMetadata = ossClientAgent.getObjectMetadata(bucket, key);
             long fileSize = objectMetadata.getContentLength();
             long end;
-            if (fileSize-1 >= byteRangeStart+length) {
-                end = byteRangeStart+length;
+            if (fileSize-1 >= (byteRangeStart+length-1)) {
+                end = byteRangeStart+length-1;
             } else {
                 end = fileSize-1;
             }
