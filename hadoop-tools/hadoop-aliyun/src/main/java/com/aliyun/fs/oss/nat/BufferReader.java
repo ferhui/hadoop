@@ -91,7 +91,7 @@ public class BufferReader {
     public synchronized int read() throws IOException {
         if (halfReading.get() == 0) {
             while (!(ready0.get() == concurrentStreams)) {
-                LOG.warn("waiting for fetching oss data.");
+                LOG.warn("waiting for fetching oss data, has completed " + ready0.get());
                 try {
                     Thread.sleep(100);
                 } catch (InterruptedException e) {
@@ -139,7 +139,7 @@ public class BufferReader {
     public synchronized int read(byte[] b, int off, int len) {
         if (halfReading.get() == 0) {
             while (!(ready0.get() == concurrentStreams)) {
-                LOG.warn("waiting for fetching oss data.");
+                LOG.warn("waiting for fetching oss data, has completed " + ready0.get());
                 try {
                     Thread.sleep(100);
                 } catch (InterruptedException e) {
@@ -246,21 +246,24 @@ public class BufferReader {
         public void execute(TaskEngine engineRef) throws IOException {
             while (closed) {
                 if (preread) {
-                    preread = false;
+                    System.out.println("[ConcurrentReader"+readerId+"] preread: " + preread);
                     // fetch oss data for half-0 and half-1 at the first time, as there is no data in buffer.
                     fetchData(half0StartPos);
                     half0Completed = true;
                     half1Completed = false;
                     ready0.addAndGet(1);
+                    preread = false;
                 }
 
                 if (halfReading.get() == 0 && !half1Completed) {
+                    System.out.println("[ConcurrentReader"+readerId+"] halfReading: " + halfReading.get());
                     // fetch oss data for half-1
                     fetchData(half1StartPos);
                     half1Completed = true;
                     half0Completed = false;
                     ready1.addAndGet(1);
                 } else if (halfReading.get() == 1 && !half0Completed) {
+                    System.out.println("[ConcurrentReader"+readerId+"] halfReading: " + halfReading.get());
                     // fetch oss data for half-0
                     fetchData(half0StartPos);
                     half0Completed = true;
@@ -268,6 +271,7 @@ public class BufferReader {
                     ready0.addAndGet(1);
                 } else {
                     // waiting for `halfReading` block data to be consumed
+                    System.out.println("[ConcurrentReader"+readerId+"] waiting for `halfReading` block data to be consumed");
                     try {
                         Thread.sleep(100);
                     } catch (InterruptedException e) {
@@ -289,6 +293,7 @@ public class BufferReader {
             try {
                 in = store.retrieve(key, newpos, length);
             } catch (Exception e) {
+                System.out.println("[ConcurrentReader"+readerId+"] " + e.getMessage());
                 throw new EOFException("Cannot open oss input stream");
             }
 
@@ -335,6 +340,7 @@ public class BufferReader {
                     }
                     off = startPos;
                 }
+                System.out.println("[ConcurrentReader"+readerId+"] retry: " + retry + ", off: " + off);
             } while (tries>0 && retry);
             in.close();
             if (startPos == half0StartPos) {
