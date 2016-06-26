@@ -7,9 +7,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 
-import java.io.EOFException;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -230,8 +228,9 @@ public class BufferReader {
         private int half0StartPos = -1;
         private int half1StartPos = -1;
         private int length = -1;
+        private PrintStream ps;
 
-        public ConcurrentReader(int readerId) {
+        public ConcurrentReader(int readerId) throws FileNotFoundException {
             assert(bufferSize%2 == 0);
             assert(concurrentStreams%2 == 0);
             this.readerId = readerId;
@@ -240,13 +239,22 @@ public class BufferReader {
 
             this.half0StartPos = readerId * length;
             this.half1StartPos = bufferSize / 2 + readerId * length;
+
+            String fileName = "ConcurrentReader-"+readerId;
+            File file = new File(fileName);
+            if (file.exists()) {
+                file.delete();
+            }
+
+            FileOutputStream fos = new FileOutputStream(file);
+            ps = new PrintStream(fos);
         }
 
         @Override
         public void execute(TaskEngine engineRef) throws IOException {
             while (closed) {
                 if (preread) {
-                    LOG.info("[ConcurrentReader"+readerId+"] preread: " + preread);
+                    ps.println("[ConcurrentReader"+readerId+"] preread: " + preread);
                     // fetch oss data for half-0 and half-1 at the first time, as there is no data in buffer.
                     fetchData(half0StartPos);
                     half0Completed = true;
@@ -256,14 +264,14 @@ public class BufferReader {
                 }
 
                 if (halfReading.get() == 0 && !half1Completed) {
-                    LOG.info("[ConcurrentReader"+readerId+"] halfReading: " + halfReading.get());
+                    ps.println("[ConcurrentReader"+readerId+"] halfReading: " + halfReading.get());
                     // fetch oss data for half-1
                     fetchData(half1StartPos);
                     half1Completed = true;
                     half0Completed = false;
                     ready1.addAndGet(1);
                 } else if (halfReading.get() == 1 && !half0Completed) {
-                    LOG.info("[ConcurrentReader"+readerId+"] halfReading: " + halfReading.get());
+                    ps.println("[ConcurrentReader"+readerId+"] halfReading: " + halfReading.get());
                     // fetch oss data for half-0
                     fetchData(half0StartPos);
                     half0Completed = true;
@@ -271,11 +279,11 @@ public class BufferReader {
                     ready0.addAndGet(1);
                 } else {
                     // waiting for `halfReading` block data to be consumed
-                    LOG.info("[ConcurrentReader"+readerId+"] waiting for `halfReading` block data to be consumed");
+                    ps.println("[ConcurrentReader"+readerId+"] waiting for `halfReading` block data to be consumed");
                     try {
                         Thread.sleep(100);
                     } catch (InterruptedException e) {
-                        LOG.warn("Something wrong when sleep.", e);
+                        ps.println("Something wrong when sleep, " + e.getMessage());
                     }
                 }
             }
@@ -293,7 +301,7 @@ public class BufferReader {
             try {
                 in = store.retrieve(key, newpos, length);
             } catch (Exception e) {
-                LOG.info("[ConcurrentReader"+readerId+"] " + e.getMessage());
+                ps.println("[ConcurrentReader"+readerId+"] " + e.getMessage());
                 throw new EOFException("Cannot open oss input stream");
             }
 
@@ -318,7 +326,7 @@ public class BufferReader {
                         throw new IOException(e1);
                     }
 
-                    LOG.warn("Some exceptions occurred in oss connection, try to reopen oss connection.", e1);
+                    ps.println("Some exceptions occurred in oss connection, try to reopen oss connection, " + e1.getMessage());
                     try {
                         Thread.sleep(100);
                     } catch (InterruptedException e2) {
@@ -340,7 +348,7 @@ public class BufferReader {
                     }
                     off = startPos;
                 }
-                LOG.info("[ConcurrentReader"+readerId+"] retry: " + retry + ", off: " + off);
+                ps.println("[ConcurrentReader-"+readerId+"] retry: " + retry + ", off: " + off);
             } while (tries>0 && retry);
             in.close();
             if (startPos == half0StartPos) {
