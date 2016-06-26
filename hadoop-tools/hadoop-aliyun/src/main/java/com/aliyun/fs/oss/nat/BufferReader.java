@@ -329,16 +329,16 @@ public class BufferReader {
                 ret = false;
                 fetchLength = (int) fileContentLength / concurrentStreams;
                 newpos = fetchLength * readerId;
-                LOG.info("1 ----> fetchLength: " + fetchLength + ", newpos: " + newpos);
+                LOG.info("[ConcurrentReader-"+readerId+"] 1 ----> fetchLength: " + fetchLength + ", newpos: " + newpos);
             } else if ((halfHaveConsumed.get()+1) * bufferSize >= fileContentLength) {
                 ret = false;
                 fetchLength = (int) (fileContentLength - halfHaveConsumed.get() * bufferSize) / concurrentStreams;
                 newpos = halfHaveConsumed.get() * bufferSize + readerId * fetchLength;
-                LOG.info("2 ----> fetchLength: " + fetchLength + ", newpos: " + newpos);
+                LOG.info("[ConcurrentReader-"+readerId+"] 2 ----> fetchLength: " + fetchLength + ", newpos: " + newpos);
             }
             InputStream in = null;
             try {
-                LOG.info("key: " + key + ", new pos: " + newpos + ", fetchLength: " + fetchLength);
+                LOG.info("[ConcurrentReader-"+readerId+"] key: " + key + ", new pos: " + newpos + ", fetchLength: " + fetchLength);
                 in = store.retrieve(key, newpos, fetchLength);
             } catch (Exception e) {
                 LOG.info("[ConcurrentReader-"+readerId+"] " + e.getMessage());
@@ -389,7 +389,7 @@ public class BufferReader {
                     }
                     off = startPos;
                 }
-                LOG.info("[ConcurrentReader-"+readerId+"] retry: " + retry + ", off: " + off);
+                LOG.info("[ConcurrentReader-"+readerId+"] retry: " + retry + ", tries " + tries + ", off: " + off);
             } while (tries>0 && retry);
             in.close();
             if (startPos == half0StartPos) {
