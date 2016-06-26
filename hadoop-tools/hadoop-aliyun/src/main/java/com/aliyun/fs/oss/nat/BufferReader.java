@@ -289,9 +289,7 @@ public class BufferReader {
                     half1Completed = false;
                     ready0.addAndGet(1);
                     preread = false;
-                }
-
-                if (halfReading.get() == 0 && !half1Completed) {
+                } else if (halfReading.get() == 0 && !half1Completed) {
                     LOG.info("[ConcurrentReader-"+readerId+"] halfReading: " + halfReading.get());
                     // fetch oss data for half-1
                     _continue = fetchData(half1StartPos);
