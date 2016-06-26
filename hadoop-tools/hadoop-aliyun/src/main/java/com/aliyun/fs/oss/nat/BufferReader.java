@@ -349,16 +349,18 @@ public class BufferReader {
             int tries = 10;
             int result;
             boolean retry = true;
+            int hasReaded = 0;
             do {
                 try {
-                    result = in.read(buffer, off, fetchLength-off);
+                    result = in.read(buffer, off, fetchLength-hasReaded);
                     if (result > 0) {
                         off += result;
+                        hasReaded += result;
                     } else if (result == -1) {
                         break;
                     }
-                    retry = off < fetchLength;
-                    LOG.info("[ConcurrentReader-"+readerId+"] fetch: " + result);
+                    retry = hasReaded < fetchLength;
+                    LOG.info("[ConcurrentReader-"+readerId+"] fetch: " + result + ", hasreaded: " + hasReaded);
                 } catch (EOFException e0) {
                     throw e0;
                 } catch (Exception e1) {
@@ -388,6 +390,7 @@ public class BufferReader {
                         throw new EOFException("[ConcurrentReader-"+readerId+"] Cannot open oss input stream");
                     }
                     off = startPos;
+                    hasReaded = 0;
                 }
                 LOG.info("[ConcurrentReader-"+readerId+"] retry: " + retry + ", tries " + tries + ", off: " + off +
                         ", newpos: " + newpos + ", fetchLength: " + fetchLength);
