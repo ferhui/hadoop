@@ -341,7 +341,7 @@ public class BufferReader {
                 LOG.info("[ConcurrentReader-"+readerId+"] key: " + key + ", new pos: " + newpos + ", fetchLength: " + fetchLength);
                 in = store.retrieve(key, newpos, fetchLength);
             } catch (Exception e) {
-                LOG.info("[ConcurrentReader-"+readerId+"] " + e.getMessage());
+                LOG.info("[ConcurrentReader-"+readerId+"]", e);
                 throw new EOFException("[ConcurrentReader-"+readerId+"] Cannot open oss input stream");
             }
 
@@ -367,7 +367,7 @@ public class BufferReader {
                         throw new IOException(e1);
                     }
 
-                    LOG.info("[ConcurrentReader-"+readerId+"] Some exceptions occurred in oss connection, try to reopen oss connection, " + e1.getMessage());
+                    LOG.info("[ConcurrentReader-"+readerId+"] Some exceptions occurred in oss connection, try to reopen oss connection", e1);
                     try {
                         Thread.sleep(100);
                     } catch (InterruptedException e2) {
@@ -389,7 +389,8 @@ public class BufferReader {
                     }
                     off = startPos;
                 }
-                LOG.info("[ConcurrentReader-"+readerId+"] retry: " + retry + ", tries " + tries + ", off: " + off);
+                LOG.info("[ConcurrentReader-"+readerId+"] retry: " + retry + ", tries " + tries + ", off: " + off +
+                        ", newpos: " + newpos + ", fetchLength: " + fetchLength);
             } while (tries>0 && retry);
             in.close();
             if (startPos == half0StartPos) {
