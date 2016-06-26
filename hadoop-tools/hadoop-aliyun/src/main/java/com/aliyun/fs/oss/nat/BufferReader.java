@@ -113,7 +113,7 @@ public class BufferReader {
             }
         } else {
             while (!(ready1.get() == concurrentStreams)) {
-                LOG.warn("waiting for fetching oss data.");
+                LOG.warn("waiting for fetching oss data, has completed " + ready1.get());
                 try {
                     Thread.sleep(100);
                 } catch (InterruptedException e) {
@@ -167,7 +167,7 @@ public class BufferReader {
             }
         } else {
             while (!(ready1.get() == concurrentStreams)) {
-                LOG.warn("waiting for fetching oss data.");
+                LOG.warn("waiting for fetching oss data, has completed " + ready1.get());
                 try {
                     Thread.sleep(100);
                 } catch (InterruptedException e) {
