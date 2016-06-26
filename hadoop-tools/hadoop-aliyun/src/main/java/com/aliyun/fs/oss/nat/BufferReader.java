@@ -323,14 +323,22 @@ public class BufferReader {
                 splitContentSize[concurrentStreams + readerId] = 0;
             }
             // fetch oss data for half-1
-            int newpos = halfHaveConsumed.get() * bufferSize / 2 + half0StartPos;
+            long newpos = halfHaveConsumed.get() * bufferSize / 2 + half0StartPos;
             int fetchLength = length;
-            if ((halfHaveConsumed.get()+1) * bufferSize >= fileContentLength) {
+            if (preread && bufferSize >= fileContentLength) {
+                ret = false;
+                fetchLength = (int) fileContentLength / concurrentStreams;
+                newpos = fetchLength * readerId;
+                LOG.info("1 ----> fetchLength: " + fetchLength + ", newpos: " + newpos);
+            } else if ((halfHaveConsumed.get()+1) * bufferSize >= fileContentLength) {
                 ret = false;
                 fetchLength = (int) (fileContentLength - halfHaveConsumed.get() * bufferSize) / concurrentStreams;
+                newpos = halfHaveConsumed.get() * bufferSize + readerId * fetchLength;
+                LOG.info("2 ----> fetchLength: " + fetchLength + ", newpos: " + newpos);
             }
             InputStream in = null;
             try {
+                LOG.info("key: " + key + ", new pos: " + newpos + ", fetchLength: " + fetchLength);
                 in = store.retrieve(key, newpos, fetchLength);
             } catch (Exception e) {
                 LOG.info("[ConcurrentReader-"+readerId+"] " + e.getMessage());
