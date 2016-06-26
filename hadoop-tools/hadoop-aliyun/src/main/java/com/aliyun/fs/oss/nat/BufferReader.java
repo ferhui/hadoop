@@ -76,7 +76,11 @@ public class BufferReader {
 
     private void initialize() {
         for(int i=0; i<concurrentStreams; i++) {
-            readers[i] = new ConcurrentReader(i);
+            try {
+                readers[i] = new ConcurrentReader(i);
+            } catch (FileNotFoundException e) {
+                e.printStackTrace();
+            }
         }
         this.taskEngine = new TaskEngine(Arrays.asList(this.readers), concurrentStreams, concurrentStreams);
         this.taskEngine.executeTask();
