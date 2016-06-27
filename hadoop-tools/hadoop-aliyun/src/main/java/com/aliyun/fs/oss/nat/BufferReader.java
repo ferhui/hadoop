@@ -260,7 +260,7 @@ public class BufferReader {
 
     private class ConcurrentReader extends Task {
         private final Log LOG = LogFactory.getLog(ConcurrentReader.class);
-        private Boolean preread = true;
+        private Boolean preRead = true;
         private int readerId = -1;
         private boolean half0Completed = false;
         private boolean half1Completed = false;
@@ -283,13 +283,13 @@ public class BufferReader {
         @Override
         public void execute(TaskEngine engineRef) throws IOException {
             while (!closed && _continue) {
-                if (preread) {
+                if (preRead) {
                     // fetch oss data for half-0 and half-1 at the first time, as there is no data in buffer.
                     _continue = fetchData(half0StartPos);
                     half0Completed = true;
                     half1Completed = false;
                     ready0.addAndGet(1);
-                    preread = false;
+                    preRead = false;
                 } else if (halfReading.get() == 0 && !half1Completed) {
                     // fetch oss data for half-1
                     _continue = fetchData(half1StartPos);
@@ -321,14 +321,14 @@ public class BufferReader {
             }
             long newPos;
             int fetchLength;
-            if (preread && bufferSize / 2 >= fileContentLength) {
+            if (preRead && bufferSize / 2 >= fileContentLength) {
                 _continue = false;
                 fetchLength = (int) fileContentLength / concurrentStreams;
                 newPos = fetchLength * readerId;
                 if (readerId == (concurrentStreams-1)) {
                     fetchLength = (int) fileContentLength - fetchLength * (concurrentStreams - 1);
                 }
-            } else if (preread) {
+            } else if (preRead) {
                 fetchLength = bufferSize / (2*concurrentStreams);
                 newPos = fetchLength * readerId;
             } else if ((long)(halfHaveConsumed.get()+1) * bufferSize / 2 >= fileContentLength) {
@@ -344,6 +344,7 @@ public class BufferReader {
             }
             InputStream in;
             try {
+                LOG.info("[ConcurrentReader-"+readerId+"] (start, end): (" + newPos + ", " + (newPos+fetchLength) + ") at chalfHaveConsumed: " + halfHaveConsumed);
                 in = store.retrieve(key, newPos, fetchLength);
             } catch (Exception e) {
                 throw new IOException("[ConcurrentReader-"+readerId+"] Cannot open oss input stream");
