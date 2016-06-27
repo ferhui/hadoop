@@ -251,7 +251,6 @@ public class BufferReader {
             for(int i=1; i <concurrentStreams; i++) {
                 for (int j=0; j<splitContentSize[i]; j++) {
                     buffer[begin+cacheIdx] = buffer[begin+splitSize*i+j];
-                    LOG.info("cacheIdx: " + cacheIdx);
                     cacheIdx++;
                 }
             }
