@@ -202,7 +202,7 @@ public class BufferReader {
                     return -1;
                 } else if (cacheIdx < realContentSize) {
                     for (int i = 0; i < len && cacheIdx < realContentSize; i++) {
-                        b[off + i] = buffer[cacheIdx];
+                        b[off + i] = buffer[bufferSize / 2 + cacheIdx];
                         cacheIdx++;
                         pos++;
                         size++;
@@ -344,7 +344,7 @@ public class BufferReader {
             }
             InputStream in;
             try {
-                LOG.info("[ConcurrentReader-"+readerId+"] (start, end): (" + newPos + ", " + (newPos+fetchLength) + ") at chalfHaveConsumed: " + halfHaveConsumed);
+                LOG.info("[ConcurrentReader-"+readerId+"] (start, end): (" + newPos + ", " + (newPos+fetchLength) + ") at halfHaveConsumed: " + halfHaveConsumed);
                 in = store.retrieve(key, newPos, fetchLength);
             } catch (Exception e) {
                 throw new IOException("[ConcurrentReader-"+readerId+"] Cannot open oss input stream");
