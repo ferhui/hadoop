@@ -117,9 +117,10 @@ public class BufferReader {
                 if (pos >= fileContentLength) {
                     return -1;
                 } else if (cacheIdx < realContentSize) {
+                    int ret = buffer[cacheIdx];
                     cacheIdx++;
                     pos++;
-                    return buffer[cacheIdx];
+                    return ret;
                 } else {
                     ready0.set(0);
                     halfReading.set(1);
@@ -145,8 +146,9 @@ public class BufferReader {
                 if (pos >= fileContentLength) {
                     return -1;
                 } else if (cacheIdx < realContentSize) {
+                    int ret = buffer[bufferSize / 2 + cacheIdx];
                     cacheIdx++;
-                    return buffer[bufferSize / 2 + cacheIdx];
+                    return ret;
                 } else {
                     ready1.set(0);
                     halfReading.set(0);
@@ -179,7 +181,6 @@ public class BufferReader {
                 if (pos >= fileContentLength) {
                     return -1;
                 } else if (cacheIdx < realContentSize) {
-                    cacheIdx++;
                     for (int i = 0; i < len && cacheIdx < realContentSize; i++) {
                         b[off + i] = buffer[cacheIdx];
                         cacheIdx++;
@@ -213,7 +214,6 @@ public class BufferReader {
                 if (pos >= fileContentLength) {
                     return -1;
                 } else if (cacheIdx < realContentSize) {
-                    cacheIdx++;
                     for (int i = 0; i < len && cacheIdx < realContentSize; i++) {
                         b[off + i] = buffer[cacheIdx];
                         cacheIdx++;
@@ -251,6 +251,7 @@ public class BufferReader {
             for(int i=1; i <concurrentStreams; i++) {
                 for (int j=0; j<splitContentSize[i]; j++) {
                     buffer[begin+cacheIdx] = buffer[begin+splitSize*i+j];
+                    LOG.info("cacheIdx: " + cacheIdx);
                     cacheIdx++;
                 }
             }
