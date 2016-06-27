@@ -250,10 +250,10 @@ public class BufferReader {
         if (halfReading.get() == 0) {
             begin = 0;
         } else {
-            begin = bufferSize / 2;
+            begin = bufferSize/2;
         }
         int cacheIdx;
-        if (totalSize != bufferSize) {
+        if (totalSize != bufferSize/2) {
             LOG.info("total size != bufferSize");
             cacheIdx = splitContentSize[0];
             for(int i=1; i <concurrentStreams; i++) {
@@ -358,8 +358,8 @@ public class BufferReader {
                 LOG.info("[ConcurrentReader-"+readerId+"] key: " + key + ", new pos: " + newpos + ", fetchLength: " + fetchLength);
                 in = store.retrieve(key, newpos, fetchLength);
             } catch (Exception e) {
-                LOG.info("[ConcurrentReader-"+readerId+"]", e);
-                throw new EOFException("[ConcurrentReader-"+readerId+"] Cannot open oss input stream");
+                LOG.info("[ConcurrentReader-"+readerId+"] Cannot open oss input stream", e);
+                throw new IOException("[ConcurrentReader-"+readerId+"] Cannot open oss input stream");
             }
 
             int off = startPos;
@@ -379,6 +379,7 @@ public class BufferReader {
                     retry = hasReaded < fetchLength;
 //                    LOG.info("[ConcurrentReader-"+readerId+"] fetch: " + result + ", hasreaded: " + hasReaded + ", off: " + off);
                 } catch (EOFException e0) {
+                    LOG.info("[ConcurrentReader-"+readerId+"] Some exceptions occurred in oss connection, try to reopen oss connection", e0);
                     throw e0;
                 } catch (Exception e1) {
                     tries--;
@@ -404,7 +405,8 @@ public class BufferReader {
                     try {
                         in = store.retrieve(key, newpos, fetchLength);
                     } catch (Exception e) {
-                        throw new EOFException("[ConcurrentReader-"+readerId+"] Cannot open oss input stream");
+                        LOG.info("[ConcurrentReader-"+readerId+"] Cannot open oss input stream", e);
+                        throw new IOException("[ConcurrentReader-"+readerId+"] Cannot open oss input stream");
                     }
                     off = startPos;
                     hasReaded = 0;
@@ -413,8 +415,8 @@ public class BufferReader {
 //                        ", newpos: " + newpos + ", fetchLength: " + fetchLength);
             } while (tries>0 && retry);
             in.close();
+            LOG.info("retry: " + retry + ", tries remain: " + tries + "splitContentSize " + readerId + " of " + startPos + ": " + hasReaded);
             if (startPos == half0StartPos) {
-                LOG.info("splitContentSize " + readerId + ": " + hasReaded);
                 splitContentSize[readerId] = hasReaded;
             } else {
                 splitContentSize[concurrentStreams + readerId] = hasReaded;
