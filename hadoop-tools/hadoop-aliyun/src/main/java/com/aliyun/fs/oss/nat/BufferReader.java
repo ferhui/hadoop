@@ -364,16 +364,16 @@ public class BufferReader {
             } else if (preread) {
                 fetchLength = bufferSize / (2*concurrentStreams);
                 newpos = fetchLength * readerId;
-            } else if ((halfHaveConsumed.get()+1) * bufferSize >= fileContentLength) {
+            } else if ((halfHaveConsumed.get()+1) * bufferSize / 2 >= fileContentLength) {
                 _continue = false;
                 fetchLength = (int) (fileContentLength - halfHaveConsumed.get() * bufferSize / 2) / concurrentStreams;
                 newpos = halfHaveConsumed.get() * bufferSize / 2 + readerId * fetchLength;
                 if (readerId == (concurrentStreams-1)) {
-                    fetchLength = (int) fileContentLength - halfHaveConsumed.get() * bufferSize - (fetchLength * concurrentStreams - 1);
+                    fetchLength = (int) fileContentLength - halfHaveConsumed.get() * bufferSize / 2 - (fetchLength * concurrentStreams - 1);
                 }
 //                LOG.info("[ConcurrentReader-"+readerId+"] 2 ----> fetchLength: " + fetchLength + ", newpos: " + newpos);
             } else {
-                fetchLength = (int) (fileContentLength - halfHaveConsumed.get() * bufferSize / 2) / concurrentStreams;
+                fetchLength = bufferSize / (2*concurrentStreams);
                 newpos = halfHaveConsumed.get() * bufferSize / 2 + readerId * fetchLength;
             }
             InputStream in = null;
