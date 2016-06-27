@@ -369,7 +369,7 @@ public class BufferReader {
                 fetchLength = (int) (fileContentLength - (long)halfHaveConsumed.get() * bufferSize / 2) / concurrentStreams;
                 newPos = (long)halfHaveConsumed.get() * bufferSize / 2 + readerId * fetchLength;
                 if (readerId == (concurrentStreams-1)) {
-                    fetchLength = (int) (fileContentLength - (long)halfHaveConsumed.get() * bufferSize / 2 - (fetchLength * concurrentStreams - 1));
+                    fetchLength = (int) (fileContentLength - (long)halfHaveConsumed.get() * bufferSize / 2 - (fetchLength * (concurrentStreams - 1)));
                 }
 //                LOG.info("[ConcurrentReader-"+readerId+"] 2 ----> fetchLength: " + fetchLength + ", newPos: " + newPos);
             } else {
