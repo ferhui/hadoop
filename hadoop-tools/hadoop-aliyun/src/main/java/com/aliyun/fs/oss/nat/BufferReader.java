@@ -235,7 +235,9 @@ public class BufferReader {
         int totalSize = -1;
         for(int i=0; i<concurrentStreams; i++) {
             totalSize += splitContentSize[i];
+            LOG.info("split content size " + i + " : " + splitContentSize[i]);
         }
+        LOG.info("total size: " + totalSize);
         int begin;
         if (halfReading.get() == 0) {
             begin = 0;
@@ -244,6 +246,7 @@ public class BufferReader {
         }
         int cacheIdx;
         if (totalSize != bufferSize) {
+            LOG.info("total size != bufferSize");
             cacheIdx = splitContentSize[0];
             for(int i=1; i <concurrentStreams; i++) {
                 for (int j=0; j<splitContentSize[i]; j++) {
@@ -360,7 +363,7 @@ public class BufferReader {
                         break;
                     }
                     retry = hasReaded < fetchLength;
-                    LOG.info("[ConcurrentReader-"+readerId+"] fetch: " + result + ", hasreaded: " + hasReaded);
+                    LOG.info("[ConcurrentReader-"+readerId+"] fetch: " + result + ", hasreaded: " + hasReaded + ", off: " + off);
                 } catch (EOFException e0) {
                     throw e0;
                 } catch (Exception e1) {
@@ -392,7 +395,7 @@ public class BufferReader {
                     off = startPos;
                     hasReaded = 0;
                 }
-                LOG.info("[ConcurrentReader-"+readerId+"] retry: " + retry + ", tries " + tries + ", off: " + off +
+                LOG.info("[ConcurrentReader-"+readerId+"] retry: " + retry + ", tries remain: " + tries + ", off: " + off +
                         ", newpos: " + newpos + ", fetchLength: " + fetchLength);
             } while (tries>0 && retry);
             in.close();
