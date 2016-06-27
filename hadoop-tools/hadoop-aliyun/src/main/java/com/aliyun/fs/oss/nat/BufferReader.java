@@ -351,35 +351,35 @@ public class BufferReader {
             } else {
                 splitContentSize[concurrentStreams + readerId] = 0;
             }
-            long newpos = halfHaveConsumed.get() * bufferSize / 2 + half0StartPos;
-            int fetchLength = length;
+            long newPos;
+            int fetchLength;
             if (preread && bufferSize / 2 >= fileContentLength) {
                 _continue = false;
                 fetchLength = (int) fileContentLength / concurrentStreams;
-                newpos = fetchLength * readerId;
+                newPos = fetchLength * readerId;
                 if (readerId == (concurrentStreams-1)) {
                     fetchLength = (int) fileContentLength - fetchLength * (concurrentStreams - 1);
                 }
-//                LOG.info("[ConcurrentReader-"+readerId+"] 1 ----> fetchLength: " + fetchLength + ", newpos: " + newpos);
+//                LOG.info("[ConcurrentReader-"+readerId+"] 1 ----> fetchLength: " + fetchLength + ", newPos: " + newPos);
             } else if (preread) {
                 fetchLength = bufferSize / (2*concurrentStreams);
-                newpos = fetchLength * readerId;
-            } else if ((halfHaveConsumed.get()+1) * bufferSize / 2 >= fileContentLength) {
+                newPos = fetchLength * readerId;
+            } else if ((long)(halfHaveConsumed.get()+1) * bufferSize / 2 >= fileContentLength) {
                 _continue = false;
-                fetchLength = (int) (fileContentLength - halfHaveConsumed.get() * bufferSize / 2) / concurrentStreams;
-                newpos = halfHaveConsumed.get() * bufferSize / 2 + readerId * fetchLength;
+                fetchLength = (int) (fileContentLength - (long)halfHaveConsumed.get() * bufferSize / 2) / concurrentStreams;
+                newPos = (long)halfHaveConsumed.get() * bufferSize / 2 + readerId * fetchLength;
                 if (readerId == (concurrentStreams-1)) {
-                    fetchLength = (int) fileContentLength - halfHaveConsumed.get() * bufferSize / 2 - (fetchLength * concurrentStreams - 1);
+                    fetchLength = (int) (fileContentLength - (long)halfHaveConsumed.get() * bufferSize / 2 - (fetchLength * concurrentStreams - 1));
                 }
-//                LOG.info("[ConcurrentReader-"+readerId+"] 2 ----> fetchLength: " + fetchLength + ", newpos: " + newpos);
+//                LOG.info("[ConcurrentReader-"+readerId+"] 2 ----> fetchLength: " + fetchLength + ", newPos: " + newPos);
             } else {
                 fetchLength = bufferSize / (2*concurrentStreams);
-                newpos = halfHaveConsumed.get() * bufferSize / 2 + readerId * fetchLength;
+                newPos = (long)halfHaveConsumed.get() * bufferSize / 2 + readerId * fetchLength;
             }
-            InputStream in = null;
+            InputStream in;
             try {
-                LOG.info("[ConcurrentReader-"+readerId+"] key: " + key + ", new pos: " + newpos + ", fetchLength: " + fetchLength + ", consumed: " + halfHaveConsumed);
-                in = store.retrieve(key, newpos, fetchLength);
+                LOG.info("[ConcurrentReader-"+readerId+"] key: " + key + ", new pos: " + newPos + ", fetchLength: " + fetchLength + ", consumed: " + halfHaveConsumed);
+                in = store.retrieve(key, newPos, fetchLength);
             } catch (Exception e) {
                 LOG.info("[ConcurrentReader-"+readerId+"] Cannot open oss input stream", e);
                 throw new IOException("[ConcurrentReader-"+readerId+"] Cannot open oss input stream");
@@ -389,18 +389,18 @@ public class BufferReader {
             int tries = 10;
             int result;
             boolean retry = true;
-            int hasReaded = 0;
+            int hasRead = 0;
             do {
                 try {
-                    result = in.read(buffer, off, fetchLength-hasReaded);
+                    result = in.read(buffer, off, fetchLength-hasRead);
                     if (result > 0) {
                         off += result;
-                        hasReaded += result;
+                        hasRead += result;
                     } else if (result == -1) {
                         break;
                     }
-                    retry = hasReaded < fetchLength;
-//                    LOG.info("[ConcurrentReader-"+readerId+"] fetch: " + result + ", hasreaded: " + hasReaded + ", off: " + off);
+                    retry = hasRead < fetchLength;
+//                    LOG.info("[ConcurrentReader-"+readerId+"] fetch: " + result + ", hasreaded: " + hasRead + ", off: " + off);
                 } catch (EOFException e0) {
                     LOG.info("[ConcurrentReader-"+readerId+"] Some exceptions occurred in oss connection, try to reopen oss connection", e0);
                     throw e0;
@@ -426,24 +426,24 @@ public class BufferReader {
                         }
                     }
                     try {
-                        in = store.retrieve(key, newpos, fetchLength);
+                        in = store.retrieve(key, newPos, fetchLength);
                     } catch (Exception e) {
                         LOG.info("[ConcurrentReader-"+readerId+"] Cannot open oss input stream", e);
                         throw new IOException("[ConcurrentReader-"+readerId+"] Cannot open oss input stream");
                     }
                     off = startPos;
-                    hasReaded = 0;
+                    hasRead = 0;
                 }
 //                LOG.info("[ConcurrentReader-"+readerId+"] retry: " + retry + ", tries remain: " + tries + ", off: " + off +
-//                        ", newpos: " + newpos + ", fetchLength: " + fetchLength);
+//                        ", newPos: " + newPos + ", fetchLength: " + fetchLength);
             } while (tries>0 && retry);
             in.close();
             LOG.info("[ConcurrentReader-"+readerId+"] retry: " + retry + ", tries remain: " + tries + " splitContentSize " +
-                    readerId + " of " + startPos + ": " + hasReaded);
+                    readerId + " of " + startPos + ": " + hasRead);
             if (startPos == half0StartPos) {
-                splitContentSize[readerId] = hasReaded;
+                splitContentSize[readerId] = hasRead;
             } else {
-                splitContentSize[concurrentStreams + readerId] = hasReaded;
+                splitContentSize[concurrentStreams + readerId] = hasRead;
             }
 
             return _continue;
