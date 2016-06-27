@@ -241,25 +241,43 @@ public class BufferReader {
 
     private int squeeze() {
         int totalSize = 0;
-        for(int i=0; i<concurrentStreams; i++) {
-            totalSize += splitContentSize[i];
-            LOG.info("split content size " + i + " : " + splitContentSize[i]);
-        }
-        LOG.info("total size: " + totalSize);
         int begin;
         if (halfReading.get() == 0) {
+            for(int i=0; i<concurrentStreams; i++) {
+                totalSize += splitContentSize[i];
+                LOG.info("split content size " + i + " : " + splitContentSize[i]);
+            }
+            LOG.info("total size: " + totalSize);
             begin = 0;
+
+            int cacheIdx;
+            if (totalSize != bufferSize/2) {
+                LOG.info("total size != bufferSize");
+                cacheIdx = splitContentSize[0];
+                for(int i=1; i <concurrentStreams; i++) {
+                    for (int j=0; j<splitContentSize[i]; j++) {
+                        buffer[begin+cacheIdx] = buffer[begin+splitSize*i+j];
+                        cacheIdx++;
+                    }
+                }
+            }
         } else {
+            for(int i=0; i<concurrentStreams; i++) {
+                totalSize += splitContentSize[concurrentStreams+i];
+                LOG.info("split content size " + i + " : " + splitContentSize[concurrentStreams+i]);
+            }
+            LOG.info("total size: " + totalSize);
             begin = bufferSize/2;
-        }
-        int cacheIdx;
-        if (totalSize != bufferSize/2) {
-            LOG.info("total size != bufferSize");
-            cacheIdx = splitContentSize[0];
-            for(int i=1; i <concurrentStreams; i++) {
-                for (int j=0; j<splitContentSize[i]; j++) {
-                    buffer[begin+cacheIdx] = buffer[begin+splitSize*i+j];
-                    cacheIdx++;
+
+            int cacheIdx;
+            if (totalSize != bufferSize/2) {
+                LOG.info("total size != bufferSize");
+                cacheIdx = splitContentSize[concurrentStreams];
+                for(int i=1; i <concurrentStreams; i++) {
+                    for (int j=0; j<splitContentSize[concurrentStreams+i]; j++) {
+                        buffer[begin+cacheIdx] = buffer[begin+splitSize*i+j];
+                        cacheIdx++;
+                    }
                 }
             }
         }
