@@ -178,7 +178,7 @@ public class BufferReader {
                 int size = 0;
                 if (pos >= fileContentLength) {
                     return -1;
-                } else if (cacheIdx < splitContentSize[0]) {
+                } else if (cacheIdx < realContentSize) {
                     cacheIdx++;
                     for (int i = 0; i < len && cacheIdx < realContentSize; i++) {
                         b[off + i] = buffer[cacheIdx];
@@ -212,7 +212,7 @@ public class BufferReader {
                 int size = 0;
                 if (pos >= fileContentLength) {
                     return -1;
-                } else if (cacheIdx < splitContentSize[0]) {
+                } else if (cacheIdx < realContentSize) {
                     cacheIdx++;
                     for (int i = 0; i < len && cacheIdx < realContentSize; i++) {
                         b[off + i] = buffer[cacheIdx];
@@ -232,7 +232,7 @@ public class BufferReader {
     }
 
     private int squeeze() {
-        int totalSize = -1;
+        int totalSize = 0;
         for(int i=0; i<concurrentStreams; i++) {
             totalSize += splitContentSize[i];
             LOG.info("split content size " + i + " : " + splitContentSize[i]);
@@ -332,11 +332,17 @@ public class BufferReader {
                 ret = false;
                 fetchLength = (int) fileContentLength / concurrentStreams;
                 newpos = fetchLength * readerId;
+                if (readerId == (concurrentStreams-1)) {
+                    fetchLength = (int) fileContentLength - fetchLength * (concurrentStreams - 1);
+                }
                 LOG.info("[ConcurrentReader-"+readerId+"] 1 ----> fetchLength: " + fetchLength + ", newpos: " + newpos);
             } else if ((halfHaveConsumed.get()+1) * bufferSize >= fileContentLength) {
                 ret = false;
                 fetchLength = (int) (fileContentLength - halfHaveConsumed.get() * bufferSize) / concurrentStreams;
                 newpos = halfHaveConsumed.get() * bufferSize + readerId * fetchLength;
+                if (readerId == (concurrentStreams-1)) {
+                    fetchLength = (int) fileContentLength - halfHaveConsumed.get() * bufferSize - (fetchLength * concurrentStreams - 1);
+                }
                 LOG.info("[ConcurrentReader-"+readerId+"] 2 ----> fetchLength: " + fetchLength + ", newpos: " + newpos);
             }
             InputStream in = null;
@@ -400,7 +406,7 @@ public class BufferReader {
             } while (tries>0 && retry);
             in.close();
             if (startPos == half0StartPos) {
-                LOG.info("splitContentSize " + readerId + ": " + off);
+                LOG.info("splitContentSize " + readerId + ": " + hasReaded);
                 splitContentSize[readerId] = hasReaded;
             } else {
                 splitContentSize[concurrentStreams + readerId] = hasReaded;
