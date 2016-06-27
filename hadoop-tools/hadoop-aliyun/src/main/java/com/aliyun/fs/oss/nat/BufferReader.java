@@ -400,9 +400,10 @@ public class BufferReader {
             } while (tries>0 && retry);
             in.close();
             if (startPos == half0StartPos) {
-                splitContentSize[readerId] = off;
+                LOG.info("splitContentSize " + readerId + ": " + off);
+                splitContentSize[readerId] = hasReaded;
             } else {
-                splitContentSize[concurrentStreams + readerId] = off;
+                splitContentSize[concurrentStreams + readerId] = hasReaded;
             }
 
             return ret;
