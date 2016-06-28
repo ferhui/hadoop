@@ -18,6 +18,12 @@
 
 package com.aliyun.fs.oss.nat;
 
+import com.aliyun.fs.oss.utils.Result;
+import com.aliyun.fs.oss.utils.TaskEngine;
+import com.aliyun.fs.oss.utils.task.Task;
+import com.aliyun.oss.model.PartETag;
+import com.aliyun.oss.model.UploadPartCopyResult;
+import com.aliyun.oss.model.UploadPartResult;
 import com.google.common.base.Preconditions;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -99,6 +105,8 @@ public class NativeOssFileSystem extends FileSystem {
         private long blockSize = 1073741824L;
         private long blockWritten = 0L;
         private int blockId = 0;
+        private TaskEngine taskEngine = new TaskEngine(2, 2);
+        private String uploadId = store.getUploadId(key);
 
         public NativeOssFsOutputStream(Configuration conf, NativeFileSystemStore store, String key,
                                        boolean append, Progressable progress, int bufferSize) throws IOException {
@@ -139,7 +147,30 @@ public class NativeOssFileSystem extends FileSystem {
             LOG.info("OutputStream for key '" + key + "' closed. Now beginning upload");
 
             try {
-                store.storeFiles(key, blockFiles, append);
+                if (blockFiles.size() == 1) {
+                    store.storeFile(key, blockFile, append);
+                } else {
+                    Task task = store.createOSSPutTask(blockFile, key, uploadId, blockId + 1);
+                    task.setUuid(blockId + "");
+                    taskEngine.addTask(task);
+                    taskEngine.release(blockFiles.size());
+                    List<PartETag> partETags = new ArrayList<PartETag>();
+                    Map<String, Object> responseMap = taskEngine.getResultMap();
+                    for (int i = 0; i < blockFiles.size(); i++) {
+                        Result result = (Result) responseMap.get(i+"");
+                        if (!result.isSuccess()) {
+                            throw new RuntimeException("Failed to upload block file");
+                        } else {
+                            UploadPartResult uploadPartResult = (UploadPartResult) result.getModels().get("uploadPartResult");
+                            partETags.add(uploadPartResult.getPartETag());
+                        }
+                    }
+
+                    store.completeUpload(key, uploadId, partETags);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+                throw new IOException(e);
             } finally {
                 for (File blockFile: blockFiles) {
                     if (blockFile.exists() && !blockFile.delete()) {
@@ -182,6 +213,9 @@ public class NativeOssFileSystem extends FileSystem {
             blockFiles.add(blockFile);
             blockStream.flush();
             blockStream.close();
+            Task task = store.createOSSPutTask(blockFile, key, uploadId, blockId+1);
+            task.setUuid(blockId+"");
+            taskEngine.addTask(task);
             blockFile = newBlockFile();
             blockId++;
             LOG.info("OutputStream for key '" + key + "' writing to tempfile '" + this.blockFile + "' of block " + blockId);

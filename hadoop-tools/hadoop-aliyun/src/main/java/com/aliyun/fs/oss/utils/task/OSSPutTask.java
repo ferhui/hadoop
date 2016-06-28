@@ -68,6 +68,8 @@ public class OSSPutTask extends Task {
             result.setSuccess(true);
             this.response = result;
         } catch (Exception e) {
+            result.setSuccess(false);
+            this.response = result;
             e.printStackTrace();
         }
     }

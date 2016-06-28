@@ -40,6 +40,12 @@ public class TaskEngine {
                     new LinkedBlockingQueue<Runnable>());
     }
 
+    public TaskEngine(int coreSize, int maxSize) {
+        unCompletedTask = new CountDownLatch(10000);
+        executorService = new ThreadPoolExecutor(coreSize, maxSize, 60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<Runnable>());
+    }
+
     public void reportCompleted() {
         unCompletedTask.countDown();
     }
@@ -58,6 +64,16 @@ public class TaskEngine {
             task.setTaskEngine(this);
             executorService.execute(task);
         }
+    }
+
+    public void release(int n) {
+        for(int i=0; i<10000-n; i++) {
+            unCompletedTask.countDown();
+        }
+    }
+
+    public void addTask(Task task) {
+        executorService.execute(task);
     }
 
     public void shutdown() {

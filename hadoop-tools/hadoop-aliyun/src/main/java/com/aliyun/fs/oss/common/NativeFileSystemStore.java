@@ -18,6 +18,8 @@
 
 package com.aliyun.fs.oss.common;
 
+import com.aliyun.fs.oss.utils.task.Task;
+import com.aliyun.oss.model.PartETag;
 import org.apache.hadoop.conf.Configuration;
 
 import java.io.File;
@@ -49,9 +51,11 @@ public interface NativeFileSystemStore {
             throws IOException;
 
     void delete(String key) throws IOException;
-
     void copy(String srcKey, String dstKey) throws IOException;
 
+    String getUploadId(String dstKey) throws IOException;
+    Task createOSSPutTask(File file, String finalDstKey, String uploadId, int idx) throws IOException;
+    void completeUpload(String key, String uploadId, List<PartETag> partETags) throws IOException;
     /**
      * Delete all keys with the given prefix. Used for testing.
      * @throws IOException

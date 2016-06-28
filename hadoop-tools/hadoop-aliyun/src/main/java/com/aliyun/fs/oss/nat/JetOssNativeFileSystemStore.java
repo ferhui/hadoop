@@ -578,6 +578,24 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
         }
     }
 
+    @Override
+    public String getUploadId(String dstKey) throws IOException {
+        InitiateMultipartUploadResult initiateMultipartUploadResult =
+                ossClientAgent.initiateMultipartUpload(bucket, dstKey, conf);
+        return initiateMultipartUploadResult.getUploadId();
+    }
+
+    @Override
+    public Task createOSSPutTask(File file, String finalDstKey, String uploadId, int idx) throws IOException {
+        long contentLength = file.length();
+        return new OSSPutTask(ossClientAgent, uploadId, bucket, finalDstKey, contentLength, 0L, idx, file, conf);
+    }
+
+    @Override
+    public void completeUpload(String key, String uploadId, List<PartETag> partETags) throws IOException {
+        ossClientAgent.completeMultipartUpload(bucket, key, uploadId, partETags, conf);
+    }
+
     public void purge(String prefix) throws IOException {
         try {
             List<OSSObjectSummary> objects = ossClientAgent.listObjects(bucket, prefix).getObjectSummaries();
