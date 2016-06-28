@@ -413,10 +413,11 @@ public class BufferReader {
     }
 
     private void progressPrint() {
-        double currentProgress = ((long) halfHaveConsumed.get() * bufferSize / 2) > fileContentLength ? 1.0d : ((long) halfHaveConsumed.get() * bufferSize / 2) / fileContentLength;
+        long hasRead = (long) halfHaveConsumed.get() * bufferSize / 2;
+        double currentProgress = hasRead > fileContentLength ? 1.0d : (double) hasRead / fileContentLength;
         if (currentProgress - lastProgress >= 0.1 || currentProgress == 1.0d) {
             BigDecimal b = new BigDecimal(currentProgress);
-            LOG.info("Current progress of reading  " + key + "is: " + b.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue());
+            LOG.info("Current progress of reading '" + key + "' is: " + b.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue());
             lastProgress = currentProgress;
         }
     }

@@ -38,6 +38,7 @@ import com.aliyun.fs.oss.utils.Utils;
 import org.apache.hadoop.io.retry.RetryPolicies;
 import org.apache.hadoop.io.retry.RetryPolicy;
 import org.apache.hadoop.io.retry.RetryProxy;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.Progressable;
 
 import java.io.*;
@@ -106,7 +107,9 @@ public class NativeOssFileSystem extends FileSystem {
         private long blockWritten = 0L;
         private int blockId = 0;
         private TaskEngine taskEngine = new TaskEngine(2, 2);
-        private String uploadId = store.getUploadId(key);
+        private String uploadId = null;
+        private boolean redirect = false;
+        private String finalDstKey = null;
 
         public NativeOssFsOutputStream(Configuration conf, NativeFileSystemStore store, String key,
                                        boolean append, Progressable progress, int bufferSize) throws IOException {
@@ -166,7 +169,11 @@ public class NativeOssFileSystem extends FileSystem {
                         }
                     }
 
-                    store.completeUpload(key, uploadId, partETags);
+                    if (redirect) {
+                        store.storeUploadIdAndPartETag(key, finalDstKey, partETags, uploadId);
+                    } else {
+                        store.completeUpload(key, uploadId, partETags);
+                    }
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -213,8 +220,39 @@ public class NativeOssFileSystem extends FileSystem {
             blockFiles.add(blockFile);
             blockStream.flush();
             blockStream.close();
-            Task task = store.createOSSPutTask(blockFile, key, uploadId, blockId+1);
-            task.setUuid(blockId+"");
+
+            if (blockId == 0) {
+                // in some cases, we can not get finalOutputPath properly.
+                // 1. hadoop DistCp: the 'OUTDIR' is useless, and the procedure is different from a normal MR job.
+                // Each mapper do the 'copy' independently, and set the target path as Mapper arguments.
+                // 2. hadoop fs -cp: get 'OUTDIR' null
+                boolean redirectOutput = conf.getBoolean("job.output.oss.redirect", true);
+                String finalOutputPath = conf.get(FileOutputFormat.OUTDIR);
+                // compatible with old hadoop configuration
+                if (finalOutputPath == null || finalOutputPath.isEmpty()) {
+                    finalOutputPath = conf.get("mapred.output.dir");
+                }
+
+                if (redirectOutput && finalOutputPath!=null) {
+                    String finalDstPath = finalOutputPath + "/" + key.substring(key.lastIndexOf("/"));
+                    String finalDstKey = NativeOssFileSystem.pathToKey(new Path(finalDstPath));
+                    uploadId = store.getUploadId(finalDstKey);
+                    store.preStoreUploadId(key, finalDstKey, uploadId);
+                    redirect = true;
+                    this.finalDstKey = finalDstKey;
+                } else {
+                    uploadId = store.getUploadId(key);
+                    redirect = false;
+                }
+            }
+
+            Task task;
+            if (redirect) {
+                task = store.createOSSPutTask(blockFile, finalDstKey, uploadId, blockId + 1);
+            } else {
+                task = store.createOSSPutTask(blockFile, key, uploadId, blockId + 1);
+            }
+            task.setUuid(blockId + "");
             taskEngine.addTask(task);
             blockFile = newBlockFile();
             blockId++;

@@ -350,8 +350,12 @@ public class FileOutputCommitter extends OutputCommitter {
           }
           // use multi-thread to do multipart commit.
           List<Task> tasks = new ArrayList<Task>();
+          int n = 0;
           for(Path uploadIdFile: uploadIdFiles) {
-            tasks.add(new OSSCommitTask(fs, ossClientAgent, uploadIdFile));
+            Task ossCommitTask = new OSSCommitTask(fs, ossClientAgent, uploadIdFile);
+            ossCommitTask.setUuid(n+"");
+            n++;
+            tasks.add(ossCommitTask);
           }
           TaskEngine taskEngine = new TaskEngine(tasks, numCommitThreads, numCommitThreads);
           try {

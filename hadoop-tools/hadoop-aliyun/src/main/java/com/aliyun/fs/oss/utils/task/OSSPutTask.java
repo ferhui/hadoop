@@ -65,6 +65,7 @@ public class OSSPutTask extends Task {
                     partNumber, localFile, conf);
             result.getModels().put("uploadPartResult", uploadPartResult);
             // TODO: fail?
+            localFile.delete();
             result.setSuccess(true);
             this.response = result;
         } catch (Exception e) {

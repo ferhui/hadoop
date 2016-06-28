@@ -222,7 +222,8 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
         return partETags;
     }
 
-    private void preStoreUploadId(String key, String finalDstKey, String uploadId) throws IOException {
+    @Override
+    public void preStoreUploadId(String key, String finalDstKey, String uploadId) throws IOException {
         LOG.info("pre-store uploadId before uploading any file");
         ByteArrayOutputStream bao = new ByteArrayOutputStream();
         ObjectOutputStream oos = new ObjectOutputStream(bao);
@@ -261,7 +262,8 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
         }
     }
 
-    private void storeUploadIdAndPartETag(String key, String finalDstKey, List<PartETag> partETags, String uploadId)
+    @Override
+    public void storeUploadIdAndPartETag(String key, String finalDstKey, List<PartETag> partETags, String uploadId)
             throws IOException {
         LOG.info("store uploadId and partETag after completing uploading file");
         List<SerializableETag> serializableETags = new ArrayList<SerializableETag>();

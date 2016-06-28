@@ -36,9 +36,9 @@ public class OSSCommitTask extends Task {
     @Override
     public void execute(TaskEngine engineRef) {
         Result result = new Result();
-        InputStream in = null;
+        InputStream in;
         ObjectInputStream ois = null;
-        String bucket = "";
+        String bucket;
         String finalDstKey = "";
         String uploadId = "";
         try {

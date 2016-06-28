@@ -56,6 +56,9 @@ public interface NativeFileSystemStore {
     String getUploadId(String dstKey) throws IOException;
     Task createOSSPutTask(File file, String finalDstKey, String uploadId, int idx) throws IOException;
     void completeUpload(String key, String uploadId, List<PartETag> partETags) throws IOException;
+    void preStoreUploadId(String key, String finalDstKey, String uploadId) throws IOException;
+    void storeUploadIdAndPartETag(String key, String finalDstKey, List<PartETag> partETags, String uploadId)
+            throws IOException;
     /**
      * Delete all keys with the given prefix. Used for testing.
      * @throws IOException
