@@ -8,6 +8,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 
 import java.io.*;
+import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -41,6 +42,7 @@ public class BufferReader {
     private boolean squeezed0 = false;
     private boolean squeezed1 = false;
     private int realContentSize;
+    private double lastProgress = 0.0d;
 
     public BufferReader(NativeFileSystemStore store, String key, Configuration conf) throws IOException {
         this.store = store;
@@ -101,6 +103,7 @@ public class BufferReader {
                     realContentSize = squeeze();
                     squeezed0 = true;
                     squeezed1 = false;
+                    progressPrint();
                 }
 
                 // read data from buffer half-0
@@ -129,6 +132,7 @@ public class BufferReader {
                     realContentSize = squeeze();
                     squeezed0 = false;
                     squeezed1 = true;
+                    progressPrint();
                 }
 
                 // read data from buffer half-1
@@ -162,6 +166,7 @@ public class BufferReader {
                     realContentSize = squeeze();
                     squeezed0 = true;
                     squeezed1 = false;
+                    progressPrint();
                 }
 
                 // read data from buffer half-0
@@ -194,6 +199,7 @@ public class BufferReader {
                     realContentSize = squeeze();
                     squeezed0 = false;
                     squeezed1 = true;
+                    progressPrint();
                 }
 
                 // read data from buffer half-1
@@ -344,7 +350,6 @@ public class BufferReader {
             }
             InputStream in;
             try {
-                LOG.info("[ConcurrentReader-"+readerId+"] (start, end): (" + newPos + ", " + (newPos+fetchLength) + ") at halfHaveConsumed: " + halfHaveConsumed);
                 in = store.retrieve(key, newPos, fetchLength);
             } catch (Exception e) {
                 throw new IOException("[ConcurrentReader-"+readerId+"] Cannot open oss input stream");
@@ -404,6 +409,15 @@ public class BufferReader {
             }
 
             return _continue;
+        }
+    }
+
+    private void progressPrint() {
+        double currentProgress = ((long) halfHaveConsumed.get() * bufferSize / 2) > fileContentLength ? 1.0d : ((long) halfHaveConsumed.get() * bufferSize / 2) / fileContentLength;
+        if (currentProgress - lastProgress >= 0.1 || currentProgress == 1.0d) {
+            BigDecimal b = new BigDecimal(currentProgress);
+            LOG.info("Current progress of reading  " + key + "is: " + b.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue());
+            lastProgress = currentProgress;
         }
     }
 }

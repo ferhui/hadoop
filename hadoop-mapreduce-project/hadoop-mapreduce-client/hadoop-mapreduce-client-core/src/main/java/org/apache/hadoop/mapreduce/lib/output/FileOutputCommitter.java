@@ -79,6 +79,7 @@ public class FileOutputCommitter extends OutputCommitter {
   private Configuration conf = null;
   private OSSClientAgent ossClientAgent = null;
   private List<Path> uploadIdFiles = new ArrayList<Path>();
+  private int numCommitThreads = 1;
 
   /**
    * Create a file output committer
@@ -105,8 +106,8 @@ public class FileOutputCommitter extends OutputCommitter {
   @Private
   public FileOutputCommitter(Path outputPath, 
                              JobContext context) throws IOException {
-    Configuration conf = context.getConfiguration();
-    this.conf = conf;
+    this.conf = context.getConfiguration();
+    this.numCommitThreads = conf.getInt("fs.oss.uploadPartCommit.thread.number", 10);
     algorithmVersion =
         conf.getInt(FILEOUTPUTCOMMITTER_ALGORITHM_VERSION,
                     FILEOUTPUTCOMMITTER_ALGORITHM_VERSION_DEFAULT);
@@ -352,7 +353,7 @@ public class FileOutputCommitter extends OutputCommitter {
           for(Path uploadIdFile: uploadIdFiles) {
             tasks.add(new OSSCommitTask(fs, ossClientAgent, uploadIdFile));
           }
-          TaskEngine taskEngine = new TaskEngine(tasks, 10, 10);
+          TaskEngine taskEngine = new TaskEngine(tasks, numCommitThreads, numCommitThreads);
           try {
             taskEngine.executeTask();
             Map<String, Object> responseMap = taskEngine.getResultMap();

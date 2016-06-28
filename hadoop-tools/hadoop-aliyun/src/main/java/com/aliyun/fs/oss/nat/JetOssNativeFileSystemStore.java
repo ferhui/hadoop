@@ -56,6 +56,7 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
     private OSSClientAgent ossClientAgent;
     private String bucket;
     private int numCopyThreads;
+    private int numPutThreads;
     private long maxSplitSize;
     private int numSplits;
 
@@ -109,9 +110,10 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
             this.ossClientAgent = new OSSClientAgent(endpoint, accessKeyId, accessKeySecret, securityToken, conf);
         }
 
-        this.numCopyThreads = conf.getInt("fs.oss.multipart.thread.number", 5);
+        this.numCopyThreads = conf.getInt("fs.oss.uploadPartCopy.thread.number", 10);
+        this.numPutThreads = conf.getInt("fs.oss.uploadPart.thread.number", 5);
         this.maxSplitSize = conf.getLong("fs.oss.multipart.split.max.byte", 5 * 1024 * 1024L);
-        this.numSplits = conf.getInt("fs.oss.multipart.split.number", numCopyThreads);
+        this.numSplits = conf.getInt("fs.oss.multipart.split.number", 10);
         this.maxSimpleCopySize = conf.getLong("fs.oss.copy.simple.max.byte", 64 * 1024 * 1024L);
         this.maxSimplePutSize = conf.getLong("fs.oss.put.simple.max.byte", 64 * 1024 * 1024);
     }
@@ -138,7 +140,7 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
             tasks.add(ossPutTask);
         }
 
-        TaskEngine taskEngine = new TaskEngine(tasks, numCopyThreads, numCopyThreads);
+        TaskEngine taskEngine = new TaskEngine(tasks, numPutThreads, numPutThreads);
         try {
             taskEngine.executeTask();
             Map<String, Object> responseMap = taskEngine.getResultMap();
@@ -202,7 +204,7 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
 
         int realPartCount = tasks.size();
         List<PartETag> partETags = new ArrayList<PartETag>();
-        TaskEngine taskEngine = new TaskEngine(tasks, numCopyThreads, numCopyThreads);
+        TaskEngine taskEngine = new TaskEngine(tasks, numPutThreads, numPutThreads);
         try {
             taskEngine.executeTask();
             Map<String, Object> responseMap = taskEngine.getResultMap();
