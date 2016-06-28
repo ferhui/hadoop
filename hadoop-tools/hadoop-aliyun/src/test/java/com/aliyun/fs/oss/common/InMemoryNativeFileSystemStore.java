@@ -179,6 +179,16 @@ public class InMemoryNativeFileSystemStore implements NativeFileSystemStore {
 
     }
 
+    @Override
+    public void preStoreUploadId(String key, String finalDstKey, String uploadId) throws IOException {
+
+    }
+
+    @Override
+    public void storeUploadIdAndPartETag(String key, String finalDstKey, List<PartETag> partETags, String uploadId) throws IOException {
+
+    }
+
     public void purge(String prefix) throws IOException {
         Iterator<Map.Entry<String, FileMetadata>> i =
                 metadataMap.entrySet().iterator();
