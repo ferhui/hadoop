@@ -19,6 +19,8 @@
 package com.aliyun.fs.oss.common;
 
 import com.aliyun.fs.oss.nat.NativeOssFileSystem;
+import com.aliyun.fs.oss.utils.task.Task;
+import com.aliyun.oss.model.PartETag;
 import org.apache.hadoop.conf.Configuration;
 
 import java.io.*;
@@ -160,6 +162,21 @@ public class InMemoryNativeFileSystemStore implements NativeFileSystemStore {
     public void copy(String srcKey, String dstKey) throws IOException {
         metadataMap.put(dstKey, metadataMap.get(srcKey));
         dataMap.put(dstKey, dataMap.get(srcKey));
+    }
+
+    @Override
+    public String getUploadId(String dstKey) throws IOException {
+        return null;
+    }
+
+    @Override
+    public Task createOSSPutTask(File file, String finalDstKey, String uploadId, int idx) throws IOException {
+        return null;
+    }
+
+    @Override
+    public void completeUpload(String key, String uploadId, List<PartETag> partETags) throws IOException {
+
     }
 
     public void purge(String prefix) throws IOException {
