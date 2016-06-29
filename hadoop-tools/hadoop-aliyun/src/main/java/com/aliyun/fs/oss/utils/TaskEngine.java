@@ -73,6 +73,7 @@ public class TaskEngine {
     }
 
     public void addTask(Task task) {
+        task.setTaskEngine(this);
         executorService.execute(task);
     }
 
