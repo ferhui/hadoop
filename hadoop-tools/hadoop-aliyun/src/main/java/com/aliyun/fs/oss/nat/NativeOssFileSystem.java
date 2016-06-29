@@ -151,9 +151,15 @@ public class NativeOssFileSystem extends FileSystem {
 
             try {
                 if (blockFiles.size() == 1) {
+                    LOG.info("store local file '" + blockFile + "' directly");
                     store.storeFile(key, blockFile, append);
                 } else {
-                    Task task = store.createOSSPutTask(blockFile, key, uploadId, blockId + 1);
+                    Task task;
+                    if (redirect) {
+                        task = store.createOSSPutTask(blockFile, finalDstKey, uploadId, blockId + 1);
+                    } else {
+                        task = store.createOSSPutTask(blockFile, key, uploadId, blockId + 1);
+                    }
                     task.setUuid(blockId + "");
                     taskEngine.addTask(task);
                     taskEngine.release(blockFiles.size());
@@ -184,6 +190,7 @@ public class NativeOssFileSystem extends FileSystem {
                         LOG.warn("Could not delete temporary OSS file: " + blockFile);
                     }
                 }
+                taskEngine.shutdown();
                 super.close();
                 closed = true;
             }
@@ -220,7 +227,7 @@ public class NativeOssFileSystem extends FileSystem {
             blockFiles.add(blockFile);
             blockStream.flush();
             blockStream.close();
-
+            LOG.info("flushing data at block " + blockId);
             if (blockId == 0) {
                 // in some cases, we can not get finalOutputPath properly.
                 // 1. hadoop DistCp: the 'OUTDIR' is useless, and the procedure is different from a normal MR job.
@@ -244,6 +251,7 @@ public class NativeOssFileSystem extends FileSystem {
                     uploadId = store.getUploadId(key);
                     redirect = false;
                 }
+                LOG.info("redirect is " + redirect);
             }
 
             Task task;

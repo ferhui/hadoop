@@ -22,11 +22,14 @@ import com.aliyun.fs.oss.utils.Result;
 import com.aliyun.fs.oss.utils.TaskEngine;
 
 import com.aliyun.oss.model.UploadPartResult;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 
 import java.io.*;
 
 public class OSSPutTask extends Task {
+    private static final Log LOG = LogFactory.getLog(OSSPutTask.class);
     OSSClientAgent ossClientAgent;
     private String uploadId;
     private String bucket;
@@ -71,7 +74,7 @@ public class OSSPutTask extends Task {
         } catch (Exception e) {
             result.setSuccess(false);
             this.response = result;
-            e.printStackTrace();
+            LOG.error("Failed to upload oss file.", e);
         }
     }
 }

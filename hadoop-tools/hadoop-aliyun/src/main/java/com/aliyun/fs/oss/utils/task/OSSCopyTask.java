@@ -22,9 +22,12 @@ import com.aliyun.fs.oss.utils.Result;
 import com.aliyun.fs.oss.utils.TaskEngine;
 
 import com.aliyun.oss.model.UploadPartCopyResult;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 
 public class OSSCopyTask extends Task {
+    private static final Log LOG = LogFactory.getLog(OSSPutTask.class);
     OSSClientAgent ossClientAgent;
     private String uploadId;
     private String srcBucket;
@@ -71,7 +74,7 @@ public class OSSCopyTask extends Task {
         } catch (Exception e) {
             result.setSuccess(false);
             this.response = result;
-            e.printStackTrace();
+            LOG.error("Failed to copy oss file.", e);
         }
     }
 }
