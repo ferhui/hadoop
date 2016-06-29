@@ -39,6 +39,29 @@ public class OSSPutTask extends Task {
     private int partNumber;
     private File localFile;
     private Configuration conf;
+    private boolean deleteAfterUse = false;
+
+    public OSSPutTask(OSSClientAgent ossClientAgent,
+                      String uploadId,
+                      String bucket,
+                      String key,
+                      Long partSize,
+                      Long beginIndex,
+                      int partNumber,
+                      File file,
+                      Configuration conf,
+                      boolean deleteAfterUse) {
+        this.ossClientAgent = ossClientAgent;
+        this.uploadId = uploadId;
+        this.bucket = bucket;
+        this.key = key;
+        this.partSize = partSize;
+        this.beginIndex = beginIndex;
+        this.partNumber = partNumber;
+        this.localFile = file;
+        this.conf = conf;
+        this.deleteAfterUse = deleteAfterUse;
+    }
 
     public OSSPutTask(OSSClientAgent ossClientAgent,
                       String uploadId,
@@ -68,7 +91,9 @@ public class OSSPutTask extends Task {
                     partNumber, localFile, conf);
             result.getModels().put("uploadPartResult", uploadPartResult);
             // TODO: fail?
-            localFile.delete();
+            if (deleteAfterUse) {
+                localFile.delete();
+            }
             result.setSuccess(true);
             this.response = result;
         } catch (Exception e) {

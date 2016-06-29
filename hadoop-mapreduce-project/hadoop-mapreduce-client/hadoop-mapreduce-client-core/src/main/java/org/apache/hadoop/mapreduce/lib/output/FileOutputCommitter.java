@@ -350,11 +350,10 @@ public class FileOutputCommitter extends OutputCommitter {
           }
           // use multi-thread to do multipart commit.
           List<Task> tasks = new ArrayList<Task>();
-          int n = 0;
-          for(Path uploadIdFile: uploadIdFiles) {
-            Task ossCommitTask = new OSSCommitTask(fs, ossClientAgent, uploadIdFile);
-            ossCommitTask.setUuid(n+"");
-            n++;
+          List<List<Path>> subLists = bisect(uploadIdFiles, numCommitThreads);
+          for(int i=0; i<numCommitThreads; i++) {
+            Task ossCommitTask = new OSSCommitTask(fs, ossClientAgent, subLists.get(i));
+            ossCommitTask.setUuid(i+"");
             tasks.add(ossCommitTask);
           }
           TaskEngine taskEngine = new TaskEngine(tasks, numCommitThreads, numCommitThreads);
@@ -387,6 +386,23 @@ public class FileOutputCommitter extends OutputCommitter {
     } else {
       LOG.warn("Output Path is null in commitJob()");
     }
+  }
+
+  private List<List<Path>> bisect(List<Path> paths, int slice) {
+    List<List<Path>> ret = new ArrayList<List<Path>>();
+      if (paths != null && paths.size() > 0) {
+        for (int i=0; i<slice; i++) {
+          ret.add(new ArrayList<Path>());
+        }
+        int n = 0;
+        for(Path path: paths) {
+          int idx = n % slice;
+          ret.get(idx).add(path);
+          n++;
+        }
+      }
+
+    return ret;
   }
 
   /**

@@ -13,9 +13,9 @@ import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * thread1 thread2
- *  |        |
- * /        /
+ * thread1 thread2        thread2^m
+ *  |        |                |
+ * /        /                /
  * [0][1][2][3][4][5][6][7]...|...[2^n-8][2^n-7][2^n-6][2^n-5][2^n-4][2^n-3][2^n-2][2^n-1]
  */
 public class BufferReader {
@@ -30,7 +30,7 @@ public class BufferReader {
     private byte[] buffer;
     private Task[] readers;
     private int[] splitContentSize;
-    private AtomicInteger halfHaveConsumed = new AtomicInteger(1);
+    private AtomicInteger halfHavePrepared = new AtomicInteger(1);
     private AtomicInteger halfReading = new AtomicInteger(0);
     private AtomicInteger ready0 = new AtomicInteger(0);
     private AtomicInteger ready1 = new AtomicInteger(0);
@@ -117,7 +117,7 @@ public class BufferReader {
                 } else {
                     ready0.set(0);
                     halfReading.set(1);
-                    halfHaveConsumed.addAndGet(1);
+                    halfHavePrepared.addAndGet(1);
                     cacheIdx = 0;
                 }
             } else {
@@ -145,7 +145,7 @@ public class BufferReader {
                 } else {
                     ready1.set(0);
                     halfReading.set(0);
-                    halfHaveConsumed.addAndGet(1);
+                    halfHavePrepared.addAndGet(1);
                     cacheIdx = 0;
                 }
             }
@@ -184,7 +184,7 @@ public class BufferReader {
                 } else {
                     ready0.set(0);
                     halfReading.set(1);
-                    halfHaveConsumed.addAndGet(1);
+                    halfHavePrepared.addAndGet(1);
                     cacheIdx = 0;
                 }
             } else {
@@ -217,7 +217,7 @@ public class BufferReader {
                 } else {
                     ready1.set(0);
                     halfReading.set(0);
-                    halfHaveConsumed.addAndGet(1);
+                    halfHavePrepared.addAndGet(1);
                     cacheIdx = 0;
                 }
             }
@@ -337,16 +337,16 @@ public class BufferReader {
             } else if (preRead) {
                 fetchLength = bufferSize / (2*concurrentStreams);
                 newPos = fetchLength * readerId;
-            } else if ((long)(halfHaveConsumed.get()+1) * bufferSize / 2 >= fileContentLength) {
+            } else if ((long)(halfHavePrepared.get()+1) * bufferSize / 2 >= fileContentLength) {
                 _continue = false;
-                fetchLength = (int) (fileContentLength - (long)halfHaveConsumed.get() * bufferSize / 2) / concurrentStreams;
-                newPos = (long)halfHaveConsumed.get() * bufferSize / 2 + readerId * fetchLength;
+                fetchLength = (int) (fileContentLength - (long) halfHavePrepared.get() * bufferSize / 2) / concurrentStreams;
+                newPos = (long) halfHavePrepared.get() * bufferSize / 2 + readerId * fetchLength;
                 if (readerId == (concurrentStreams-1)) {
-                    fetchLength = (int) (fileContentLength - (long)halfHaveConsumed.get() * bufferSize / 2 - (fetchLength * (concurrentStreams - 1)));
+                    fetchLength = (int) (fileContentLength - (long) halfHavePrepared.get() * bufferSize / 2 - (fetchLength * (concurrentStreams - 1)));
                 }
             } else {
                 fetchLength = bufferSize / (2*concurrentStreams);
-                newPos = (long)halfHaveConsumed.get() * bufferSize / 2 + readerId * fetchLength;
+                newPos = (long) halfHavePrepared.get() * bufferSize / 2 + readerId * fetchLength;
             }
             InputStream in;
             try {
@@ -413,12 +413,16 @@ public class BufferReader {
     }
 
     private void progressPrint() {
-        long hasRead = (long) halfHaveConsumed.get() * bufferSize / 2;
+        long hasRead = (long) halfHavePrepared.get() * bufferSize / 2;
         double currentProgress = hasRead > fileContentLength ? 1.0d : (double) hasRead / fileContentLength;
         if (currentProgress - lastProgress >= 0.1 || currentProgress == 1.0d) {
             BigDecimal b = new BigDecimal(currentProgress);
             LOG.info("Current progress of reading '" + key + "' is: " + b.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue());
             lastProgress = currentProgress;
+        }
+
+        if (currentProgress == 1.0d) {
+            taskEngine.shutdown();
         }
     }
 }

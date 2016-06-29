@@ -590,7 +590,7 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
     @Override
     public Task createOSSPutTask(File file, String finalDstKey, String uploadId, int idx) throws IOException {
         long contentLength = file.length();
-        return new OSSPutTask(ossClientAgent, uploadId, bucket, finalDstKey, contentLength, 0L, idx, file, conf);
+        return new OSSPutTask(ossClientAgent, uploadId, bucket, finalDstKey, contentLength, 0L, idx, file, conf, true);
     }
 
     @Override

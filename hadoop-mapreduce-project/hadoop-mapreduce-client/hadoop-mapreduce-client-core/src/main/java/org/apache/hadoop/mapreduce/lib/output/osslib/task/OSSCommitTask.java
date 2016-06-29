@@ -23,14 +23,14 @@ public class OSSCommitTask extends Task {
 
     private FileSystem fs;
     private OSSClientAgent ossClientAgent;
-    private Path uploadIdFile;
+    private List<Path> uploadIdFiles;
 
     public OSSCommitTask(FileSystem fs,
                          OSSClientAgent ossClientAgent,
-                         Path uploadIdFile) {
+                         List<Path> uploadIdFiles) {
         this.fs = fs;
         this.ossClientAgent = ossClientAgent;
-        this.uploadIdFile = uploadIdFile;
+        this.uploadIdFiles = uploadIdFiles;
     }
 
     @Override
@@ -42,24 +42,24 @@ public class OSSCommitTask extends Task {
         String finalDstKey = "";
         String uploadId = "";
         try {
-            in = fs.open(uploadIdFile);
-            ois = new ObjectInputStream(in);
+            for (Path uploadIdFile: uploadIdFiles) {
+                in = fs.open(uploadIdFile);
+                ois = new ObjectInputStream(in);
 
-            bucket = (String) ois.readObject();
-            finalDstKey = (String) ois.readObject();
-            uploadId = (String) ois.readObject();
-            List<SerializableETag> serializableETags = (List<SerializableETag>) ois.readObject();
-            List<PartETag> partETags = new ArrayList<PartETag>();
-            for(SerializableETag serializableETag: serializableETags) {
-                partETags.add(serializableETag.toPartETag());
+                bucket = (String) ois.readObject();
+                finalDstKey = (String) ois.readObject();
+                uploadId = (String) ois.readObject();
+                List<SerializableETag> serializableETags = (List<SerializableETag>) ois.readObject();
+                List<PartETag> partETags = new ArrayList<PartETag>();
+                for (SerializableETag serializableETag : serializableETags) {
+                    partETags.add(serializableETag.toPartETag());
+                }
+                CompleteMultipartUploadResult completeMultipartUploadResult =
+                        ossClientAgent.completeMultipartUpload(bucket, finalDstKey, uploadId, partETags);
+                fs.delete(uploadIdFile, true);
+                LOG.info("complete multi-part upload " + uploadId + ": [" + completeMultipartUploadResult.getETag() + "]");
             }
-            CompleteMultipartUploadResult completeMultipartUploadResult =
-                    ossClientAgent.completeMultipartUpload(bucket, finalDstKey, uploadId, partETags);
-            fs.delete(uploadIdFile, true);
-            LOG.info("complete multi-part upload " + uploadId +
-                    ": [" + completeMultipartUploadResult.getETag() + "]");
 
-            result.getModels().put("completeMultipartUploadResult", completeMultipartUploadResult);
             // TODO: fail?
             result.setSuccess(true);
             this.response = result;
