@@ -103,10 +103,10 @@ public class NativeOssFileSystem extends FileSystem {
         private boolean closed;
         private boolean append;
         private List<File> blockFiles = new ArrayList<File>();
-        private long blockSize = 1073741824L;
+        private long blockSize;
         private long blockWritten = 0L;
         private int blockId = 0;
-        private TaskEngine taskEngine = new TaskEngine(2, 2);
+        private TaskEngine taskEngine;
         private String uploadId = null;
         private boolean redirect = false;
         private String finalDstKey = null;
@@ -119,6 +119,9 @@ public class NativeOssFileSystem extends FileSystem {
             this.blockFile = newBlockFile();
             LOG.info("OutputStream for key '" + key + "' writing to tempfile '" + this.blockFile + "' of block " + blockId);
             this.blockStream = new BufferedOutputStream(new FileOutputStream(blockFile));
+            int parallelism = conf.getInt("fs.oss.uploadPart.thread.number", 5);
+            blockSize = conf.getLong("fs.oss.local.block.size", 128 * 1024 * 1024L);
+            taskEngine = new TaskEngine(parallelism, parallelism);
         }
 
         private File newBlockFile() throws IOException {
@@ -151,7 +154,6 @@ public class NativeOssFileSystem extends FileSystem {
 
             try {
                 if (blockFiles.size() == 1) {
-                    LOG.info("store local file '" + blockFile + "' directly");
                     store.storeFile(key, blockFile, append);
                 } else {
                     Task task;
@@ -227,7 +229,6 @@ public class NativeOssFileSystem extends FileSystem {
             blockFiles.add(blockFile);
             blockStream.flush();
             blockStream.close();
-            LOG.info("flushing data at block " + blockId);
             if (blockId == 0) {
                 // in some cases, we can not get finalOutputPath properly.
                 // 1. hadoop DistCp: the 'OUTDIR' is useless, and the procedure is different from a normal MR job.
@@ -251,7 +252,6 @@ public class NativeOssFileSystem extends FileSystem {
                     uploadId = store.getUploadId(key);
                     redirect = false;
                 }
-                LOG.info("redirect is " + redirect);
             }
 
             Task task;
