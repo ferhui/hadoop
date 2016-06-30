@@ -60,8 +60,8 @@ public class BufferReader {
             this.bufferSize = 256 * 1024 * 1024;
         }
         this.buffer = new byte[bufferSize];
-        this.concurrentStreams = conf.getInt("fs.oss.read.concurrent.number", 4);
-        if (this.concurrentStreams % 2 != 0) {
+        this.concurrentStreams = conf.getInt("fs.oss.reader.concurrent.number", 4);
+        if ((Math.log(concurrentStreams) / Math.log(2)) != 0) {
             int power = (int) Math.ceil(Math.log(concurrentStreams) / Math.log(2));
             this.concurrentStreams = (int) Math.pow(2, power);
         }

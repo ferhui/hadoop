@@ -333,7 +333,10 @@ public class FileOutputCommitter extends OutputCommitter {
   public void commitJob(JobContext context) throws IOException {
     if (hasOutputPath()) {
       Path finalOutput = getOutputPath();
-      FileSystem fs = finalOutput.getFileSystem(context.getConfiguration());
+      Configuration conf = context.getConfiguration();
+      // set 'fs.oss.reader.concurrent.number' = 1 for fear of two many threads when do oss commit.
+      conf.setInt("fs.oss.reader.concurrent.number", 1);
+      FileSystem fs = finalOutput.getFileSystem(conf);
 
       if (algorithmVersion == 1) {
         for (FileStatus stat: getAllCommittedTaskPaths(context)) {

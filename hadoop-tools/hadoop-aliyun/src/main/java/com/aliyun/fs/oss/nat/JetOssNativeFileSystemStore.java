@@ -115,7 +115,7 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
         this.maxSplitSize = conf.getLong("fs.oss.multipart.split.max.byte", 5 * 1024 * 1024L);
         this.numSplits = conf.getInt("fs.oss.multipart.split.number", 10);
         this.maxSimpleCopySize = conf.getLong("fs.oss.copy.simple.max.byte", 64 * 1024 * 1024L);
-        this.maxSimplePutSize = conf.getLong("fs.oss.put.simple.max.byte", 64 * 1024 * 1024);
+        this.maxSimplePutSize = conf.getLong("fs.oss.put.simple.max.byte", 5 * 1024 * 1024);
     }
 
     public List<PartETag> multiPartFile(String finalDstKey, File file, String uploadId) throws IOException {
