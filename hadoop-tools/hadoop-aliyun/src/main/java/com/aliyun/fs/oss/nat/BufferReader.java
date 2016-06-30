@@ -83,6 +83,7 @@ public class BufferReader {
     }
 
     public void close() {
+        LOG.info("Closing input stream for '" + key + "'.");
         taskEngine.shutdown();
     }
 
@@ -98,7 +99,7 @@ public class BufferReader {
                         LOG.warn("Something wrong, keep waiting.");
                     }
                     if (i % 100 == 0) {
-                        LOG.warn("waiting for fetching oss data, has completed " + ready0.get());
+                        LOG.warn("waiting for fetching oss data at half-0, has completed " + ready0.get());
                     }
                 }
                 if (!squeezed0) {
@@ -132,7 +133,7 @@ public class BufferReader {
                         LOG.warn("Something wrong, keep waiting.");
                     }
                     if (i % 100 == 0) {
-                        LOG.warn("waiting for fetching oss data, has completed " + ready1.get());
+                        LOG.warn("waiting for fetching oss data at half-1, has completed " + ready1.get());
                     }
                 }
                 if (!squeezed1) {
@@ -171,7 +172,7 @@ public class BufferReader {
                         LOG.warn("Something wrong, keep waiting.");
                     }
                     if (j % 100 == 0) {
-                        LOG.warn("waiting for fetching oss data, has completed " + ready0.get());
+                        LOG.warn("waiting for fetching oss data at half-0, has completed " + ready0.get());
                     }
                 }
                 if (!squeezed0) {
@@ -209,7 +210,7 @@ public class BufferReader {
                         LOG.warn("Something wrong, keep waiting.");
                     }
                     if (j % 100 == 0) {
-                        LOG.warn("waiting for fetching oss data, has completed " + ready1.get());
+                        LOG.warn("waiting for fetching oss data at half-1, has completed " + ready1.get());
                     }
                 }
                 if (!squeezed1) {
@@ -305,38 +306,43 @@ public class BufferReader {
 
         @Override
         public void execute(TaskEngine engineRef) throws IOException {
+            int i = 0;
             while (!closed && _continue) {
                 if (preRead) {
-                    // fetch oss data for half-0 and half-1 at the first time, as there is no data in buffer.
+                    // fetch oss data for half-0 at the first time, as there is no data in buffer.
                     _continue = fetchData(half0StartPos);
                     half0Completed = true;
                     half1Completed = false;
+                    LOG.info("Completed to fetch OSS data for half-0 at round 1 in reader " + readerId);
                     ready0.addAndGet(1);
                     preRead = false;
-                    LOG.info("Completed to fetch OSS data for half-0 at round 1 in reader " + readerId);
                 } else if (halfReading.get() == 0 && !half1Completed) {
                     // fetch oss data for half-1
                     _continue = fetchData(half1StartPos);
                     half1Completed = true;
                     half0Completed = false;
-                    ready1.addAndGet(1);
                     LOG.info("Completed to fetch OSS data for half-1 at round " + (halfHavePrepared.get()+1) + " in reader " + readerId);
+                    ready1.addAndGet(1);
                 } else if (halfReading.get() == 1 && !half0Completed) {
                     // fetch oss data for half-0
                     _continue = fetchData(half0StartPos);
                     half0Completed = true;
                     half1Completed = false;
-                    ready0.addAndGet(1);
                     LOG.info("Completed to fetch OSS data for half-0 at round " + (halfHavePrepared.get()+1) + " in reader " + readerId);
+                    ready0.addAndGet(1);
                 } else {
+                    i++;
                     // waiting for `halfReading` block data to be consumed
                     try {
                         Thread.sleep(100);
                     } catch (InterruptedException e) {
                     }
+                    if (i % 100 == 0) {
+                        LOG.info("waiting for block data to be consumed");
+                    }
                 }
             }
-            LOG.info("Reader " + readerId + " exited.");
+            LOG.info("Reader " + readerId + " exited. closed: " + closed + ", continue: " + _continue);
         }
 
         private boolean fetchData(int startPos) throws IOException {
@@ -441,7 +447,7 @@ public class BufferReader {
         double currentProgress = hasRead > fileContentLength ? 1.0d : (double) hasRead / fileContentLength;
         if (currentProgress - lastProgress >= 0.1 || currentProgress == 1.0d) {
             BigDecimal b = new BigDecimal(currentProgress);
-            LOG.info("Current progress of reading '" + key + "' is: " + b.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue());
+            LOG.info("Current progress of reading '" + key + "' is " + b.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue());
             lastProgress = currentProgress;
         }
 
