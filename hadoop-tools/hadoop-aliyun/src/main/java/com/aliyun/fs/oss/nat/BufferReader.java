@@ -48,17 +48,15 @@ public class BufferReader {
         this.store = store;
         this.key = key;
         this.conf = conf;
-        this.bufferSize = conf.getInt("fs.oss.readBuffer.size", 64 * 1024 * 1024);
-        if (this.bufferSize % 2 != 0) {
+        this.fileContentLength = store.retrieveMetadata(key).getLength();
+        this.bufferSize = fileContentLength < 16 * 1024 * 1024 ? 1024 * 1024 :
+                (fileContentLength > 1024 * 1024 * 1024 ? 64 * 1024 * 1024 :
+                        (int)(fileContentLength / 16));
+        if (Math.log(bufferSize) / Math.log(2) != 0) {
             int power = (int) Math.ceil(Math.log(bufferSize) / Math.log(2));
             this.bufferSize = (int) Math.pow(2, power);
         }
-        // do not suggest to use too large buffer in case of GC issue or OOM.
-        if (this.bufferSize >= 256 * 1024 * 1024) {
-            LOG.warn("'fs.oss.readBuffer.size' is " + bufferSize + ", it's to large and system will suppress it down " +
-                    "to '268435456' automatically.");
-            this.bufferSize = 256 * 1024 * 1024;
-        }
+
         this.buffer = new byte[bufferSize];
         this.concurrentStreams = conf.getInt("fs.oss.reader.concurrent.number", 4);
         if ((Math.log(concurrentStreams) / Math.log(2)) != 0) {
@@ -68,7 +66,6 @@ public class BufferReader {
         this.readers = new ConcurrentReader[concurrentStreams];
         this.splitContentSize = new int[concurrentStreams*2];
         this.splitSize = bufferSize / concurrentStreams / 2;
-        this.fileContentLength = store.retrieveMetadata(key).getLength();
 
         initialize();
     }
@@ -316,18 +313,21 @@ public class BufferReader {
                     half1Completed = false;
                     ready0.addAndGet(1);
                     preRead = false;
+                    LOG.info("Completed to fetch OSS data for half-0 at round 1 in reader " + readerId);
                 } else if (halfReading.get() == 0 && !half1Completed) {
                     // fetch oss data for half-1
                     _continue = fetchData(half1StartPos);
                     half1Completed = true;
                     half0Completed = false;
                     ready1.addAndGet(1);
+                    LOG.info("Completed to fetch OSS data for half-1 at round " + (halfHavePrepared.get()+1) + " in reader " + readerId);
                 } else if (halfReading.get() == 1 && !half0Completed) {
                     // fetch oss data for half-0
                     _continue = fetchData(half0StartPos);
                     half0Completed = true;
                     half1Completed = false;
                     ready0.addAndGet(1);
+                    LOG.info("Completed to fetch OSS data for half-0 at round " + (halfHavePrepared.get()+1) + " in reader " + readerId);
                 } else {
                     // waiting for `halfReading` block data to be consumed
                     try {
@@ -336,6 +336,7 @@ public class BufferReader {
                     }
                 }
             }
+            LOG.info("Reader " + readerId + " exited.");
         }
 
         private boolean fetchData(int startPos) throws IOException {
