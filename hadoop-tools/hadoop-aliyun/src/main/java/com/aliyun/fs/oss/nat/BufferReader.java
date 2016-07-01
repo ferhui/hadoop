@@ -119,6 +119,13 @@ public class BufferReader {
                     return ret;
                 } else {
                     ready0.set(0);
+                    while (!(ready1.get() == concurrentStreams)) {
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            LOG.warn("Something wrong, keep waiting.");
+                        }
+                    }
                     halfReading.set(1);
                     halfHavePrepared.addAndGet(1);
                     cacheIdx = 0;
@@ -152,6 +159,13 @@ public class BufferReader {
                     return ret;
                 } else {
                     ready1.set(0);
+                    while (!(ready0.get() == concurrentStreams)) {
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            LOG.warn("Something wrong, keep waiting.");
+                        }
+                    }
                     halfReading.set(0);
                     halfHavePrepared.addAndGet(1);
                     cacheIdx = 0;
@@ -196,6 +210,13 @@ public class BufferReader {
                     return size;
                 } else {
                     ready0.set(0);
+                    while (!(ready1.get() == concurrentStreams)) {
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            LOG.warn("Something wrong, keep waiting.");
+                        }
+                    }
                     halfReading.set(1);
                     halfHavePrepared.addAndGet(1);
                     cacheIdx = 0;
@@ -234,6 +255,13 @@ public class BufferReader {
                     return size;
                 } else {
                     ready1.set(0);
+                    while (!(ready0.get() == concurrentStreams)) {
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            LOG.warn("Something wrong, keep waiting.");
+                        }
+                    }
                     halfReading.set(0);
                     halfHavePrepared.addAndGet(1);
                     cacheIdx = 0;
