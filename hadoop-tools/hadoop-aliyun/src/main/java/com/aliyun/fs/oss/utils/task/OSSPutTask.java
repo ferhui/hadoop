@@ -86,20 +86,29 @@ public class OSSPutTask extends Task {
     @Override
     public void execute(TaskEngine engineRef) {
         Result result = new Result();
-        try {
-            UploadPartResult uploadPartResult = ossClientAgent.uploadPart(uploadId, bucket, key, partSize, beginIndex,
-                    partNumber, localFile, conf);
-            result.getModels().put("uploadPartResult", uploadPartResult);
-            // TODO: fail?
-            if (deleteAfterUse) {
-                localFile.delete();
+        int tries = 3;
+        while(tries > 0) {
+            try {
+                UploadPartResult uploadPartResult = ossClientAgent.uploadPart(uploadId, bucket, key, partSize, beginIndex,
+                        partNumber, localFile, conf);
+                result.getModels().put("uploadPartResult", uploadPartResult);
+                // TODO: fail?
+                if (deleteAfterUse) {
+                    localFile.delete();
+                }
+                result.setSuccess(true);
+                this.response = result;
+                break;
+            } catch (Exception e) {
+                LOG.error("Failed to upload oss file, try again.", e);
             }
-            result.setSuccess(true);
-            this.response = result;
-        } catch (Exception e) {
+
+            tries--;
+        }
+
+        if (tries == 0) {
             result.setSuccess(false);
             this.response = result;
-            LOG.error("Failed to upload oss file.", e);
         }
     }
 }
