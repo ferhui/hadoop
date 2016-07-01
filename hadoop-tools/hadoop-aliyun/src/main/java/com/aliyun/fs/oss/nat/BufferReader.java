@@ -42,6 +42,7 @@ public class BufferReader {
     private boolean squeezed1 = false;
     private int realContentSize;
     private double lastProgress = 0.0d;
+    private AtomicInteger halfConsuming = new AtomicInteger(1);
 
     public BufferReader(NativeFileSystemStore store, String key, Configuration conf) throws IOException {
         this.store = store;
@@ -120,6 +121,7 @@ public class BufferReader {
                     ready0.set(0);
                     halfReading.set(1);
                     cacheIdx = 0;
+                    halfConsuming.addAndGet(1);
                 }
             } else {
                 int i = 0;
@@ -152,6 +154,7 @@ public class BufferReader {
                     ready1.set(0);
                     halfReading.set(0);
                     cacheIdx = 0;
+                    halfConsuming.addAndGet(1);
                 }
             }
         }
@@ -195,6 +198,7 @@ public class BufferReader {
                     ready0.set(0);
                     halfReading.set(1);
                     cacheIdx = 0;
+                    halfConsuming.addAndGet(1);
                 }
             } else {
                 int j = 0;
@@ -232,6 +236,7 @@ public class BufferReader {
                     ready1.set(0);
                     halfReading.set(0);
                     cacheIdx = 0;
+                    halfConsuming.addAndGet(1);
                 }
             }
         }
@@ -311,14 +316,14 @@ public class BufferReader {
                     half1Completed = false;
                     ready0.addAndGet(1);
                     preRead = false;
-                } else if (halfReading.get() == 0 && !half1Completed) {
+                } else if ((halfFetched<= halfConsuming.get()) && (halfFetched%2 == 1) && !half1Completed) {
                     // fetch oss data for half-1
                     _continue = fetchData(half1StartPos);
                     half1Completed = true;
                     half0Completed = false;
                     ready1.addAndGet(1);
                     halfFetched++;
-                } else if (halfReading.get() == 1 && !half0Completed) {
+                } else if (halfFetched<= halfConsuming.get() && (halfFetched%2 == 0) && !half0Completed) {
                     // fetch oss data for half-0
                     _continue = fetchData(half0StartPos);
                     half0Completed = true;
@@ -438,7 +443,7 @@ public class BufferReader {
 
     private void progressPrint() {
         long hasRead = (pos + realContentSize) / 2;
-        double currentProgress = hasRead > fileContentLength ? 1.0d : (double) hasRead / fileContentLength;
+        double currentProgress = hasRead >= (fileContentLength-1) ? 1.0d : (double) hasRead / fileContentLength;
         if (currentProgress - lastProgress >= 0.1 || currentProgress == 1.0d) {
             BigDecimal b = new BigDecimal(currentProgress);
             LOG.info("Current progress of reading '" + key + "' is " + b.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue());
