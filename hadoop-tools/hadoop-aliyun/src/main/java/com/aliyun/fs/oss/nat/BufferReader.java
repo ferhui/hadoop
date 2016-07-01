@@ -30,7 +30,6 @@ public class BufferReader {
     private byte[] buffer;
     private Task[] readers;
     private int[] splitContentSize;
-    private AtomicInteger halfHavePrepared = new AtomicInteger(1);
     private AtomicInteger halfReading = new AtomicInteger(0);
     private AtomicInteger ready0 = new AtomicInteger(0);
     private AtomicInteger ready1 = new AtomicInteger(0);
@@ -119,15 +118,7 @@ public class BufferReader {
                     return ret;
                 } else {
                     ready0.set(0);
-                    while (!(ready1.get() == concurrentStreams)) {
-                        try {
-                            Thread.sleep(100);
-                        } catch (InterruptedException e) {
-                            LOG.warn("Something wrong, keep waiting.");
-                        }
-                    }
                     halfReading.set(1);
-                    halfHavePrepared.addAndGet(1);
                     cacheIdx = 0;
                 }
             } else {
@@ -159,15 +150,7 @@ public class BufferReader {
                     return ret;
                 } else {
                     ready1.set(0);
-                    while (!(ready0.get() == concurrentStreams)) {
-                        try {
-                            Thread.sleep(100);
-                        } catch (InterruptedException e) {
-                            LOG.warn("Something wrong, keep waiting.");
-                        }
-                    }
                     halfReading.set(0);
-                    halfHavePrepared.addAndGet(1);
                     cacheIdx = 0;
                 }
             }
@@ -210,15 +193,7 @@ public class BufferReader {
                     return size;
                 } else {
                     ready0.set(0);
-                    while (!(ready1.get() == concurrentStreams)) {
-                        try {
-                            Thread.sleep(100);
-                        } catch (InterruptedException e) {
-                            LOG.warn("Something wrong, keep waiting.");
-                        }
-                    }
                     halfReading.set(1);
-                    halfHavePrepared.addAndGet(1);
                     cacheIdx = 0;
                 }
             } else {
@@ -255,15 +230,7 @@ public class BufferReader {
                     return size;
                 } else {
                     ready1.set(0);
-                    while (!(ready0.get() == concurrentStreams)) {
-                        try {
-                            Thread.sleep(100);
-                        } catch (InterruptedException e) {
-                            LOG.warn("Something wrong, keep waiting.");
-                        }
-                    }
                     halfReading.set(0);
-                    halfHavePrepared.addAndGet(1);
                     cacheIdx = 0;
                 }
             }
@@ -320,6 +287,7 @@ public class BufferReader {
         private int half1StartPos = -1;
         private int length = -1;
         private boolean _continue = true;
+        int halfFetched = 1;
 
         public ConcurrentReader(int readerId) throws FileNotFoundException {
             assert(bufferSize%2 == 0);
@@ -341,7 +309,6 @@ public class BufferReader {
                     _continue = fetchData(half0StartPos);
                     half0Completed = true;
                     half1Completed = false;
-                    LOG.info("Completed to fetch OSS data for half-0 at round 1 in reader " + readerId);
                     ready0.addAndGet(1);
                     preRead = false;
                 } else if (halfReading.get() == 0 && !half1Completed) {
@@ -349,15 +316,15 @@ public class BufferReader {
                     _continue = fetchData(half1StartPos);
                     half1Completed = true;
                     half0Completed = false;
-                    LOG.info("Completed to fetch OSS data for half-1 at round " + (halfHavePrepared.get()+1) + " in reader " + readerId);
                     ready1.addAndGet(1);
+                    halfFetched++;
                 } else if (halfReading.get() == 1 && !half0Completed) {
                     // fetch oss data for half-0
                     _continue = fetchData(half0StartPos);
                     half0Completed = true;
                     half1Completed = false;
-                    LOG.info("Completed to fetch OSS data for half-0 at round " + (halfHavePrepared.get()+1) + " in reader " + readerId);
                     ready0.addAndGet(1);
+                    halfFetched++;
                 } else {
                     i++;
                     // waiting for `halfReading` block data to be consumed
@@ -370,7 +337,6 @@ public class BufferReader {
                     }
                 }
             }
-            LOG.info("Reader " + readerId + " exited. closed: " + closed + ", continue: " + _continue);
         }
 
         private boolean fetchData(int startPos) throws IOException {
@@ -392,16 +358,16 @@ public class BufferReader {
             } else if (preRead) {
                 fetchLength = bufferSize / (2*concurrentStreams);
                 newPos = fetchLength * readerId;
-            } else if ((long)(halfHavePrepared.get()+1) * bufferSize / 2 >= fileContentLength) {
+            } else if ((long)(halfFetched+1) * bufferSize / 2 >= fileContentLength) {
                 _continue = false;
-                fetchLength = (int) (fileContentLength - (long) halfHavePrepared.get() * bufferSize / 2) / concurrentStreams;
-                newPos = (long) halfHavePrepared.get() * bufferSize / 2 + readerId * fetchLength;
+                fetchLength = (int) (fileContentLength - (long) halfFetched * bufferSize / 2) / concurrentStreams;
+                newPos = (long) halfFetched * bufferSize / 2 + readerId * fetchLength;
                 if (readerId == (concurrentStreams-1)) {
-                    fetchLength = (int) (fileContentLength - (long) halfHavePrepared.get() * bufferSize / 2 - (fetchLength * (concurrentStreams - 1)));
+                    fetchLength = (int) (fileContentLength - (long) halfFetched * bufferSize / 2 - (fetchLength * (concurrentStreams - 1)));
                 }
             } else {
                 fetchLength = bufferSize / (2*concurrentStreams);
-                newPos = (long) halfHavePrepared.get() * bufferSize / 2 + readerId * fetchLength;
+                newPos = (long) halfFetched * bufferSize / 2 + readerId * fetchLength;
             }
             InputStream in;
             try {
@@ -471,7 +437,7 @@ public class BufferReader {
     }
 
     private void progressPrint() {
-        long hasRead = (long) halfHavePrepared.get() * bufferSize / 2;
+        long hasRead = (pos + realContentSize) / 2;
         double currentProgress = hasRead > fileContentLength ? 1.0d : (double) hasRead / fileContentLength;
         if (currentProgress - lastProgress >= 0.1 || currentProgress == 1.0d) {
             BigDecimal b = new BigDecimal(currentProgress);
