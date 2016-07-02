@@ -100,6 +100,8 @@ public class OSSPutTask extends Task {
                 this.response = result;
                 break;
             } catch (Exception e) {
+                LOG.info("uploading " + key + ", partSize " + partSize + ", beginIndex " + beginIndex + ", partNumber " +
+                        partNumber + ", localFile "  + localFile + ", file size " + localFile.length());
                 LOG.error("Failed to upload oss file, try again.", e);
             }
 

@@ -131,8 +131,8 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
         List<PartETag> partETags = new ArrayList<PartETag>();
         List<Task> tasks = new ArrayList<Task>();
         for(int i=0; i<partCount; i++) {
-            long skipBytes = maxSplitSize * i;
-            long size = maxSplitSize < contentLength - skipBytes ? maxSplitSize : contentLength - skipBytes;
+            long skipBytes = partSize * i;
+            long size = partSize < contentLength - skipBytes ? partSize : contentLength - skipBytes;
             OSSPutTask ossPutTask = new OSSPutTask(ossClientAgent, uploadId, bucket, finalDstKey, size, skipBytes, i+1, file, conf);
             ossPutTask.setUuid(i+"");
             tasks.add(ossPutTask);
