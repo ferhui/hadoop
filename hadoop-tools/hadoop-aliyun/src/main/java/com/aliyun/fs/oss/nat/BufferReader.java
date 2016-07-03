@@ -50,6 +50,7 @@ public class BufferReader {
         this.store = store;
         this.key = key;
         this.conf = conf;
+        this.algorithmVersion = algorithmVersion;
         if (algorithmVersion == 1) {
             this.fileContentLength = store.retrieveMetadata(key).getLength();
             this.bufferSize = fileContentLength < 16 * 1024 * 1024 ? 1024 * 1024 :
@@ -477,7 +478,7 @@ public class BufferReader {
     }
 
     private void progressPrint() {
-        long hasRead = (pos + realContentSize) / 2;
+        long hasRead = pos + realContentSize;
         double currentProgress = hasRead >= (fileContentLength-1) ? 1.0d : (double) hasRead / fileContentLength;
         if (currentProgress - lastProgress >= 0.1 || currentProgress == 1.0d) {
             BigDecimal b = new BigDecimal(currentProgress);
