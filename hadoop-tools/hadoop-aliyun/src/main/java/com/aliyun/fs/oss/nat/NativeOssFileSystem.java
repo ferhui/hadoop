@@ -56,13 +56,17 @@ public class NativeOssFileSystem extends FileSystem {
     public static final long MAX_OSS_FILE_SIZE = 5 * 1024 * 1024 * 1024L;
     public static final String PATH_DELIMITER = Path.SEPARATOR;
     public static final int OSS_MAX_LISTING_LENGTH = 1000;
+    public static final String OSSREADER_ALGORITHM_VERSION =
+            "mapreduce.ossreader.algorithm.version";
+    public static final int OSSREADER_ALGORITHM_VERSION_DEFAULT = 1;
+    private int algorithmVersion;
 
     public class NativeOssFsInputStream extends FSInputStream {
         long pos = 0;
         BufferReader bufferReader = null;
 
         public NativeOssFsInputStream(String key) throws IOException {
-            this.bufferReader = new BufferReader(store, key, conf);
+            this.bufferReader = new BufferReader(store, key, conf, algorithmVersion);
         }
 
         @Override
@@ -70,8 +74,7 @@ public class NativeOssFileSystem extends FileSystem {
             return bufferReader.read();
         }
         @Override
-        public synchronized int read(byte[] b, int off, int len)
-                throws IOException {
+        public synchronized int read(byte[] b, int off, int len) throws IOException {
             return bufferReader.read(b, off, len);
         }
 
@@ -305,6 +308,10 @@ public class NativeOssFileSystem extends FileSystem {
             this.bufferSize = 256 * 1024 * 1024;
         }
         this.conf = conf;
+        this.algorithmVersion = conf.getInt(OSSREADER_ALGORITHM_VERSION, OSSREADER_ALGORITHM_VERSION_DEFAULT);
+        if (algorithmVersion != 1 && algorithmVersion != 2) {
+            throw new IOException("Only 1 or 2 algorithm version is supported");
+        }
     }
 
     private static NativeFileSystemStore createDefaultStore(Configuration conf) {

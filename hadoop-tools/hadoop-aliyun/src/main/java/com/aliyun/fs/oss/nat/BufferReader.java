@@ -43,31 +43,37 @@ public class BufferReader {
     private int realContentSize;
     private double lastProgress = 0.0d;
     private AtomicInteger halfConsuming = new AtomicInteger(1);
+    private int algorithmVersion;
+    private InputStream in;
 
-    public BufferReader(NativeFileSystemStore store, String key, Configuration conf) throws IOException {
+    public BufferReader(NativeFileSystemStore store, String key, Configuration conf, int algorithmVersion) throws IOException {
         this.store = store;
         this.key = key;
         this.conf = conf;
-        this.fileContentLength = store.retrieveMetadata(key).getLength();
-        this.bufferSize = fileContentLength < 16 * 1024 * 1024 ? 1024 * 1024 :
-                (fileContentLength > 1024 * 1024 * 1024 ? 64 * 1024 * 1024 :
-                        (int)(fileContentLength / 16));
-        if (Math.log(bufferSize) / Math.log(2) != 0) {
-            int power = (int) Math.ceil(Math.log(bufferSize) / Math.log(2));
-            this.bufferSize = (int) Math.pow(2, power);
-        }
+        if (algorithmVersion == 1) {
+            this.fileContentLength = store.retrieveMetadata(key).getLength();
+            this.bufferSize = fileContentLength < 16 * 1024 * 1024 ? 1024 * 1024 :
+                    (fileContentLength > 1024 * 1024 * 1024 ? 64 * 1024 * 1024 :
+                            (int) (fileContentLength / 16));
+            if (Math.log(bufferSize) / Math.log(2) != 0) {
+                int power = (int) Math.ceil(Math.log(bufferSize) / Math.log(2));
+                this.bufferSize = (int) Math.pow(2, power);
+            }
 
-        this.buffer = new byte[bufferSize];
-        this.concurrentStreams = conf.getInt("fs.oss.reader.concurrent.number", 4);
-        if ((Math.log(concurrentStreams) / Math.log(2)) != 0) {
-            int power = (int) Math.ceil(Math.log(concurrentStreams) / Math.log(2));
-            this.concurrentStreams = (int) Math.pow(2, power);
-        }
-        this.readers = new ConcurrentReader[concurrentStreams];
-        this.splitContentSize = new int[concurrentStreams*2];
-        this.splitSize = bufferSize / concurrentStreams / 2;
+            this.buffer = new byte[bufferSize];
+            this.concurrentStreams = conf.getInt("fs.oss.reader.concurrent.number", 4);
+            if ((Math.log(concurrentStreams) / Math.log(2)) != 0) {
+                int power = (int) Math.ceil(Math.log(concurrentStreams) / Math.log(2));
+                this.concurrentStreams = (int) Math.pow(2, power);
+            }
+            this.readers = new ConcurrentReader[concurrentStreams];
+            this.splitContentSize = new int[concurrentStreams * 2];
+            this.splitSize = bufferSize / concurrentStreams / 2;
 
-        initialize();
+            initialize();
+        } else {
+            in = store.retrieve(key);
+        }
     }
 
     private void initialize() {
@@ -84,161 +90,190 @@ public class BufferReader {
 
     public void close() {
         LOG.info("Closing input stream for '" + key + "'.");
-        taskEngine.shutdown();
-    }
-
-    public synchronized int read() throws IOException {
-        while (true) {
-            if (halfReading.get() == 0) {
-                int i = 0;
-                while (!(ready0.get() == concurrentStreams)) {
-                    i++;
-                    try {
-                        Thread.sleep(100);
-                    } catch (InterruptedException e) {
-                        LOG.warn("Something wrong, keep waiting.");
-                    }
-                    if (i % 100 == 0) {
-                        LOG.warn("waiting for fetching oss data at half-0, has completed " + ready0.get());
-                    }
-                }
-                if (!squeezed0) {
-                    realContentSize = squeeze();
-                    squeezed0 = true;
-                    squeezed1 = false;
-                    progressPrint();
-                }
-
-                // read data from buffer half-0
-                if (pos >= fileContentLength) {
-                    return -1;
-                } else if (cacheIdx < realContentSize) {
-                    int ret = buffer[cacheIdx];
-                    cacheIdx++;
-                    pos++;
-                    return ret;
-                } else {
-                    ready0.set(0);
-                    halfReading.set(1);
-                    cacheIdx = 0;
-                    halfConsuming.addAndGet(1);
-                }
+        try {
+            if (algorithmVersion == 1) {
+                taskEngine.shutdown();
             } else {
-                int i = 0;
-                while (!(ready1.get() == concurrentStreams)) {
-                    i++;
-                    try {
-                        Thread.sleep(100);
-                    } catch (InterruptedException e) {
-                        LOG.warn("Something wrong, keep waiting.");
-                    }
-                    if (i % 100 == 0) {
-                        LOG.warn("waiting for fetching oss data at half-1, has completed " + ready1.get());
-                    }
-                }
-                if (!squeezed1) {
-                    realContentSize = squeeze();
-                    squeezed0 = false;
-                    squeezed1 = true;
-                    progressPrint();
-                }
-
-                // read data from buffer half-1
-                if (pos >= fileContentLength) {
-                    return -1;
-                } else if (cacheIdx < realContentSize) {
-                    int ret = buffer[bufferSize / 2 + cacheIdx];
-                    cacheIdx++;
-                    return ret;
-                } else {
-                    ready1.set(0);
-                    halfReading.set(0);
-                    cacheIdx = 0;
-                    halfConsuming.addAndGet(1);
+                if (in != null) {
+                    in.close();
+                    in = null;
                 }
             }
+        } catch (IOException e) {
+            LOG.error("Failed to close input stream.", e);
         }
     }
 
-    public synchronized int read(byte[] b, int off, int len) {
-        while(true) {
-            if (halfReading.get() == 0) {
-                int j = 0;
-                while (!(ready0.get() == concurrentStreams)) {
-                    j++;
-                    try {
-                        Thread.sleep(100);
-                    } catch (InterruptedException e) {
-                        LOG.warn("Something wrong, keep waiting.");
+    public synchronized int read() throws IOException {
+        if (algorithmVersion == 1) {
+            while (true) {
+                if (halfReading.get() == 0) {
+                    int i = 0;
+                    while (!(ready0.get() == concurrentStreams)) {
+                        i++;
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            LOG.warn("Something wrong, keep waiting.");
+                        }
+                        if (i % 100 == 0) {
+                            LOG.warn("waiting for fetching oss data at half-0, has completed " + ready0.get());
+                        }
                     }
-                    if (j % 100 == 0) {
-                        LOG.warn("waiting for fetching oss data at half-0, has completed " + ready0.get());
+                    if (!squeezed0) {
+                        realContentSize = squeeze();
+                        squeezed0 = true;
+                        squeezed1 = false;
+                        progressPrint();
                     }
-                }
-                if (!squeezed0) {
-                    realContentSize = squeeze();
-                    squeezed0 = true;
-                    squeezed1 = false;
-                    progressPrint();
-                }
 
-                // read data from buffer half-0
-                int size = 0;
-                if (pos >= fileContentLength) {
-                    return -1;
-                } else if (cacheIdx < realContentSize) {
-                    for (int i = 0; i < len && cacheIdx < realContentSize; i++) {
-                        b[off + i] = buffer[cacheIdx];
+                    // read data from buffer half-0
+                    if (pos >= fileContentLength) {
+                        return -1;
+                    } else if (cacheIdx < realContentSize) {
+                        int ret = buffer[cacheIdx];
                         cacheIdx++;
                         pos++;
-                        size++;
+                        return ret;
+                    } else {
+                        ready0.set(0);
+                        halfReading.set(1);
+                        cacheIdx = 0;
+                        halfConsuming.addAndGet(1);
                     }
-                    return size;
                 } else {
-                    ready0.set(0);
-                    halfReading.set(1);
-                    cacheIdx = 0;
-                    halfConsuming.addAndGet(1);
-                }
-            } else {
-                int j = 0;
-                while (!(ready1.get() == concurrentStreams)) {
-                    j++;
-                    try {
-                        Thread.sleep(100);
-                    } catch (InterruptedException e) {
-                        LOG.warn("Something wrong, keep waiting.");
+                    int i = 0;
+                    while (!(ready1.get() == concurrentStreams)) {
+                        i++;
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            LOG.warn("Something wrong, keep waiting.");
+                        }
+                        if (i % 100 == 0) {
+                            LOG.warn("waiting for fetching oss data at half-1, has completed " + ready1.get());
+                        }
                     }
-                    if (j % 100 == 0) {
-                        LOG.warn("waiting for fetching oss data at half-1, has completed " + ready1.get());
+                    if (!squeezed1) {
+                        realContentSize = squeeze();
+                        squeezed0 = false;
+                        squeezed1 = true;
+                        progressPrint();
                     }
-                }
-                if (!squeezed1) {
-                    realContentSize = squeeze();
-                    squeezed0 = false;
-                    squeezed1 = true;
-                    progressPrint();
-                }
 
-                // read data from buffer half-1
-                int size = 0;
-                if (pos >= fileContentLength) {
-                    return -1;
-                } else if (cacheIdx < realContentSize) {
-                    for (int i = 0; i < len && cacheIdx < realContentSize; i++) {
-                        b[off + i] = buffer[bufferSize / 2 + cacheIdx];
+                    // read data from buffer half-1
+                    if (pos >= fileContentLength) {
+                        return -1;
+                    } else if (cacheIdx < realContentSize) {
+                        int ret = buffer[bufferSize / 2 + cacheIdx];
                         cacheIdx++;
-                        pos++;
-                        size++;
+                        return ret;
+                    } else {
+                        ready1.set(0);
+                        halfReading.set(0);
+                        cacheIdx = 0;
+                        halfConsuming.addAndGet(1);
                     }
-                    return size;
-                } else {
-                    ready1.set(0);
-                    halfReading.set(0);
-                    cacheIdx = 0;
-                    halfConsuming.addAndGet(1);
                 }
             }
+        } else {
+            int result = in.read();
+            if (result != -1) {
+                pos++;
+            }
+
+            return result;
+        }
+    }
+
+    public synchronized int read(byte[] b, int off, int len) throws IOException {
+        if (algorithmVersion == 1) {
+            while (true) {
+                if (halfReading.get() == 0) {
+                    int j = 0;
+                    while (!(ready0.get() == concurrentStreams)) {
+                        j++;
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            LOG.warn("Something wrong, keep waiting.");
+                        }
+                        if (j % 100 == 0) {
+                            LOG.warn("waiting for fetching oss data at half-0, has completed " + ready0.get());
+                        }
+                    }
+                    if (!squeezed0) {
+                        realContentSize = squeeze();
+                        squeezed0 = true;
+                        squeezed1 = false;
+                        progressPrint();
+                    }
+
+                    // read data from buffer half-0
+                    int size = 0;
+                    if (pos >= fileContentLength) {
+                        return -1;
+                    } else if (cacheIdx < realContentSize) {
+                        for (int i = 0; i < len && cacheIdx < realContentSize; i++) {
+                            b[off + i] = buffer[cacheIdx];
+                            cacheIdx++;
+                            pos++;
+                            size++;
+                        }
+                        return size;
+                    } else {
+                        ready0.set(0);
+                        halfReading.set(1);
+                        cacheIdx = 0;
+                        halfConsuming.addAndGet(1);
+                    }
+                } else {
+                    int j = 0;
+                    while (!(ready1.get() == concurrentStreams)) {
+                        j++;
+                        try {
+                            Thread.sleep(100);
+                        } catch (InterruptedException e) {
+                            LOG.warn("Something wrong, keep waiting.");
+                        }
+                        if (j % 100 == 0) {
+                            LOG.warn("waiting for fetching oss data at half-1, has completed " + ready1.get());
+                        }
+                    }
+                    if (!squeezed1) {
+                        realContentSize = squeeze();
+                        squeezed0 = false;
+                        squeezed1 = true;
+                        progressPrint();
+                    }
+
+                    // read data from buffer half-1
+                    int size = 0;
+                    if (pos >= fileContentLength) {
+                        return -1;
+                    } else if (cacheIdx < realContentSize) {
+                        for (int i = 0; i < len && cacheIdx < realContentSize; i++) {
+                            b[off + i] = buffer[bufferSize / 2 + cacheIdx];
+                            cacheIdx++;
+                            pos++;
+                            size++;
+                        }
+                        return size;
+                    } else {
+                        ready1.set(0);
+                        halfReading.set(0);
+                        cacheIdx = 0;
+                        halfConsuming.addAndGet(1);
+                    }
+                }
+            }
+        } else {
+            int result = in.read(b, off, len);
+            if (result > 0) {
+                pos += result;
+            }
+
+            return result;
         }
     }
 
