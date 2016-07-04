@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.io.compress;
 
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -29,11 +30,13 @@ import org.apache.hadoop.io.compress.snappy.SnappyDecompressor;
 import org.apache.hadoop.io.compress.snappy.SnappyDecompressor.SnappyDirectDecompressor;
 import org.apache.hadoop.fs.CommonConfigurationKeys;
 import org.apache.hadoop.util.NativeCodeLoader;
+import org.xerial.snappy.SnappyInputStream;
 
 /**
  * This class creates snappy compressors/decompressors.
  */
 public class SnappyCodec implements Configurable, CompressionCodec, DirectDecompressionCodec {
+  private static String IS_NATIVE_SNAPPY_STREAM = "io.compression.codec.snappy.stream.native";
   Configuration conf;
 
   /**
@@ -83,6 +86,10 @@ public class SnappyCodec implements Configurable, CompressionCodec, DirectDecomp
 
   public static String getLibraryName() {
     return SnappyCompressor.getLibraryName();
+  }
+
+  public boolean isNativeSnappyStream() {
+    return conf.getBoolean(IS_NATIVE_SNAPPY_STREAM, false);
   }
 
   /**
@@ -178,9 +185,13 @@ public class SnappyCodec implements Configurable, CompressionCodec, DirectDecomp
                                                   Decompressor decompressor)
       throws IOException {
     checkNativeCodeLoaded();
-    return new BlockDecompressorStream(in, decompressor, conf.getInt(
-        CommonConfigurationKeys.IO_COMPRESSION_CODEC_SNAPPY_BUFFERSIZE_KEY,
-        CommonConfigurationKeys.IO_COMPRESSION_CODEC_SNAPPY_BUFFERSIZE_DEFAULT));
+    if (isNativeSnappyStream()) {
+      return new NativeSnappyCompressionInputStream(in);
+    } else {
+      return new BlockDecompressorStream(in, decompressor, conf.getInt(
+              CommonConfigurationKeys.IO_COMPRESSION_CODEC_SNAPPY_BUFFERSIZE_KEY,
+              CommonConfigurationKeys.IO_COMPRESSION_CODEC_SNAPPY_BUFFERSIZE_DEFAULT));
+    }
   }
 
   /**
@@ -224,5 +235,27 @@ public class SnappyCodec implements Configurable, CompressionCodec, DirectDecomp
   @Override
   public String getDefaultExtension() {
     return ".snappy";
+  }
+
+  private static class NativeSnappyCompressionInputStream extends DecompressorStream {
+    SnappyInputStream sin;
+
+    public NativeSnappyCompressionInputStream(InputStream in, Decompressor decompressor, int bufferSize) throws IOException {
+      super(in, decompressor, bufferSize);
+      sin = new SnappyInputStream(new BufferedInputStream(in));
+    }
+
+    public NativeSnappyCompressionInputStream(InputStream in, Decompressor decompressor) throws IOException {
+      super(in, decompressor);
+    }
+
+    protected NativeSnappyCompressionInputStream(InputStream in) throws IOException {
+      super(in);
+    }
+
+    @Override
+    protected int decompress(byte[] b, int off, int len) throws IOException {
+      return sin.read(b, off, len);
+    }
   }
 }
