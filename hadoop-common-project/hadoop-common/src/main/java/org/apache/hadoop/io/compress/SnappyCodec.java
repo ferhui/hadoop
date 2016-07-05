@@ -247,10 +247,12 @@ public class SnappyCodec implements Configurable, CompressionCodec, DirectDecomp
 
     public NativeSnappyCompressionInputStream(InputStream in, Decompressor decompressor) throws IOException {
       super(in, decompressor);
+      sin = new SnappyInputStream(new BufferedInputStream(in));
     }
 
     protected NativeSnappyCompressionInputStream(InputStream in) throws IOException {
       super(in);
+      sin = new SnappyInputStream(new BufferedInputStream(in));
     }
 
     @Override
