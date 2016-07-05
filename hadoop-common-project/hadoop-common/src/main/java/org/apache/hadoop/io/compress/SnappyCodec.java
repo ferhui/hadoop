@@ -36,7 +36,7 @@ import org.xerial.snappy.SnappyInputStream;
  * This class creates snappy compressors/decompressors.
  */
 public class SnappyCodec implements Configurable, CompressionCodec, DirectDecompressionCodec {
-  private static String IS_NATIVE_SNAPPY_STREAM = "io.compression.codec.snappy.stream.native";
+  private static String IO_COMPRESSION_CODEC_SNAPPY_NATIVE = "io.compression.codec.snappy.native";
   Configuration conf;
 
   /**
@@ -89,7 +89,7 @@ public class SnappyCodec implements Configurable, CompressionCodec, DirectDecomp
   }
 
   public boolean isNativeSnappyStream() {
-    return conf.getBoolean(IS_NATIVE_SNAPPY_STREAM, false);
+    return conf.getBoolean(IO_COMPRESSION_CODEC_SNAPPY_NATIVE, false);
   }
 
   /**
