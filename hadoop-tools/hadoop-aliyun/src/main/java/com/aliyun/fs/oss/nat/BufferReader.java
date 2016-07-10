@@ -6,6 +6,7 @@ import com.aliyun.fs.oss.utils.task.Task;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSExceptionMessages;
 
 import java.io.*;
 import java.math.BigDecimal;
@@ -23,8 +24,8 @@ public class BufferReader {
 
     private NativeFileSystemStore store;
     private int concurrentStreams;
-    private Configuration conf;
     private TaskEngine taskEngine;
+    private Configuration conf;
     private int bufferSize;
     private String key;
     private byte[] buffer;
@@ -40,7 +41,7 @@ public class BufferReader {
     private long pos = 0;
     private boolean squeezed0 = false;
     private boolean squeezed1 = false;
-    private int realContentSize;
+    private int realContentSize = 0;
     private double lastProgress = 0.0d;
     private AtomicInteger halfConsuming = new AtomicInteger(1);
     private int algorithmVersion;
@@ -51,11 +52,16 @@ public class BufferReader {
         this.key = key;
         this.conf = conf;
         this.algorithmVersion = algorithmVersion;
+        prepareBeforeFetch();
+    }
+
+    private void prepareBeforeFetch() throws IOException {
         if (algorithmVersion == 1) {
             this.fileContentLength = store.retrieveMetadata(key).getLength();
-            this.bufferSize = fileContentLength < 16 * 1024 * 1024 ? 1024 * 1024 :
-                    (fileContentLength > 1024 * 1024 * 1024 ? 64 * 1024 * 1024 :
-                            (int) (fileContentLength / 16));
+            long lengthToFetch = fileContentLength - pos;
+            this.bufferSize = lengthToFetch < 16 * 1024 * 1024 ? 1024 * 1024 :
+                    (lengthToFetch > 1024 * 1024 * 1024 ? 64 * 1024 * 1024 :
+                            (int) (lengthToFetch / 16));
             if (Math.log(bufferSize) / Math.log(2) != 0) {
                 int power = (int) Math.ceil(Math.log(bufferSize) / Math.log(2));
                 this.bufferSize = (int) Math.pow(2, power);
@@ -71,18 +77,18 @@ public class BufferReader {
             this.splitContentSize = new int[concurrentStreams * 2];
             this.splitSize = bufferSize / concurrentStreams / 2;
 
-            initialize();
+            initializeTaskEngine();
         } else {
-            in = store.retrieve(key);
+            in = store.retrieve(key, pos);
         }
     }
 
-    private void initialize() {
+    private void initializeTaskEngine() {
         for(int i=0; i<concurrentStreams; i++) {
             try {
                 readers[i] = new ConcurrentReader(i);
             } catch (FileNotFoundException e) {
-                e.printStackTrace();
+               LOG.error(e);
             }
         }
         this.taskEngine = new TaskEngine(Arrays.asList(this.readers), concurrentStreams, concurrentStreams);
@@ -103,6 +109,8 @@ public class BufferReader {
         } catch (IOException e) {
             LOG.error("Failed to close input stream.", e);
         }
+
+        closed = true;
     }
 
     public synchronized int read() throws IOException {
@@ -278,6 +286,37 @@ public class BufferReader {
         }
     }
 
+    public synchronized void seek(long newpos) throws Exception {
+        if (newpos < 0) {
+            throw new EOFException(FSExceptionMessages.NEGATIVE_SEEK);
+        }
+
+        if (pos != newpos) {
+            // the seek is attempting to move to the current position
+            updateInnerStream(newpos);
+        }
+    }
+
+    private synchronized void updateInnerStream(long newpos) throws IOException {
+        this.pos = newpos;
+        close();
+        LOG.info("Opening key '" + key + "' for reading at position '" + newpos + "'.");
+        prepareBeforeFetch();
+        reset();
+    }
+
+    private void reset() {
+        halfReading.set(0);
+        ready0.set(0);
+        ready1.set(0);
+        cacheIdx = 0;
+        squeezed0 = false;
+        squeezed1 = false;
+        realContentSize = 0;
+        lastProgress = 0.0d;
+        halfConsuming.set(1);
+    }
+
     private int squeeze() {
         int totalSize = 0;
         int begin;
@@ -374,7 +413,7 @@ public class BufferReader {
                     } catch (InterruptedException e) {
                     }
                     if (i % 100 == 0) {
-                        LOG.info("waiting for block data to be consumed");
+                        LOG.info("waiting for block data to be consumed at reader " + readerId);
                     }
                 }
             }
@@ -389,26 +428,27 @@ public class BufferReader {
             }
             long newPos;
             int fetchLength;
-            if (preRead && bufferSize / 2 >= fileContentLength) {
+            long lengthToFetch = fileContentLength - pos;
+            if (preRead && bufferSize / 2 >= lengthToFetch) {
                 _continue = false;
-                fetchLength = (int) fileContentLength / concurrentStreams;
-                newPos = fetchLength * readerId;
+                fetchLength = (int) lengthToFetch / concurrentStreams;
+                newPos = pos + fetchLength * readerId;
                 if (readerId == (concurrentStreams-1)) {
-                    fetchLength = (int) fileContentLength - fetchLength * (concurrentStreams - 1);
+                    fetchLength = (int) lengthToFetch - fetchLength * (concurrentStreams - 1);
                 }
             } else if (preRead) {
                 fetchLength = bufferSize / (2*concurrentStreams);
-                newPos = fetchLength * readerId;
-            } else if ((long)(halfFetched+1) * bufferSize / 2 >= fileContentLength) {
+                newPos = pos + fetchLength * readerId;
+            } else if ((long)(halfFetched+1) * bufferSize / 2 >= lengthToFetch) {
                 _continue = false;
-                fetchLength = (int) (fileContentLength - (long) halfFetched * bufferSize / 2) / concurrentStreams;
-                newPos = (long) halfFetched * bufferSize / 2 + readerId * fetchLength;
+                fetchLength = (int) (lengthToFetch - (long) halfFetched * bufferSize / 2) / concurrentStreams;
+                newPos = pos + (long) halfFetched * bufferSize / 2 + readerId * fetchLength;
                 if (readerId == (concurrentStreams-1)) {
-                    fetchLength = (int) (fileContentLength - (long) halfFetched * bufferSize / 2 - (fetchLength * (concurrentStreams - 1)));
+                    fetchLength = (int) (lengthToFetch - (long) halfFetched * bufferSize / 2 - (fetchLength * (concurrentStreams - 1)));
                 }
             } else {
                 fetchLength = bufferSize / (2*concurrentStreams);
-                newPos = (long) halfFetched * bufferSize / 2 + readerId * fetchLength;
+                newPos = pos + (long) halfFetched * bufferSize / 2 + readerId * fetchLength;
             }
             InputStream in;
             try {
