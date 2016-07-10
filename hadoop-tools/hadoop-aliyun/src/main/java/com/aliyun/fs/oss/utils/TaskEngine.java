@@ -79,5 +79,9 @@ public class TaskEngine {
 
     public void shutdown() {
         this.executorService.shutdown();
+        for (;;) {
+            if (this.executorService.isTerminated())
+               break;
+        }
     }
 }

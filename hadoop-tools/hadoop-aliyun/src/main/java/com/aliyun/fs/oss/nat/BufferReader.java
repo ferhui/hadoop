@@ -302,7 +302,21 @@ public class BufferReader {
     private synchronized void updateInnerStream(long newpos) throws IOException {
         this.pos = newpos;
         this.instreamStart = newpos;
-        close();
+        try {
+            if (algorithmVersion == 1) {
+                closed = true;
+                taskEngine.shutdown();
+                closed = false;
+            } else {
+                if (in != null) {
+                    in.close();
+                    in = null;
+                }
+            }
+        } catch (IOException e) {
+            LOG.error("Failed to close input stream.", e);
+        }
+        LOG.info("Closed previous input stream.");
         reset();
         LOG.info("Opening key '" + key + "' for reading at position '" + newpos + "'.");
         prepareBeforeFetch();
@@ -471,6 +485,8 @@ public class BufferReader {
             int hasRead = 0;
             do {
                 try {
+                    LOG.info("off: " + off + ", fetchLength: " + fetchLength + ", hasRead: " + hasRead + ", buffer size " +
+                        bufferSize);
                     result = in.read(buffer, off, fetchLength-hasRead);
                     if (result > 0) {
                         off += result;
