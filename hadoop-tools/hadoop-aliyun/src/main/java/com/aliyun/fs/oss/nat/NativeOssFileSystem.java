@@ -89,7 +89,7 @@ public class NativeOssFileSystem extends FileSystem {
         }
         @Override
         public synchronized long getPos() throws IOException {
-            return pos;
+            return bufferReader.getPos();
         }
         @Override
         public boolean seekToNewSource(long targetPos) throws IOException {

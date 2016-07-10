@@ -47,6 +47,7 @@ public class BufferReader {
     private int algorithmVersion;
     private InputStream in;
     private long lengthToFetch;
+    private long instreamStart = 0;
 
     public BufferReader(NativeFileSystemStore store, String key, Configuration conf, int algorithmVersion) throws IOException {
         this.store = store;
@@ -300,6 +301,7 @@ public class BufferReader {
 
     private synchronized void updateInnerStream(long newpos) throws IOException {
         this.pos = newpos;
+        this.instreamStart = newpos;
         close();
         LOG.info("Opening key '" + key + "' for reading at position '" + newpos + "'.");
         prepareBeforeFetch();
@@ -358,6 +360,10 @@ public class BufferReader {
         return totalSize;
     }
 
+    public long getPos() {
+        return pos;
+    }
+
     private class ConcurrentReader extends Task {
         private final Log LOG = LogFactory.getLog(ConcurrentReader.class);
         private Boolean preRead = true;
@@ -414,7 +420,7 @@ public class BufferReader {
                     } catch (InterruptedException e) {
                     }
                     if (i % 100 == 0) {
-                        LOG.info("waiting for block data to be consumed at reader " + readerId);
+                        LOG.info("[ConcurrentReader-"+readerId+"] waiting for block data to be consumed");
                     }
                 }
             }
@@ -432,23 +438,23 @@ public class BufferReader {
             if (preRead && bufferSize / 2 >= lengthToFetch) {
                 _continue = false;
                 fetchLength = (int) lengthToFetch / concurrentStreams;
-                newPos = pos + fetchLength * readerId;
+                newPos = instreamStart + fetchLength * readerId;
                 if (readerId == (concurrentStreams-1)) {
                     fetchLength = (int) lengthToFetch - fetchLength * (concurrentStreams - 1);
                 }
             } else if (preRead) {
                 fetchLength = bufferSize / (2*concurrentStreams);
-                newPos = pos + fetchLength * readerId;
+                newPos = instreamStart + fetchLength * readerId;
             } else if ((long)(halfFetched+1) * bufferSize / 2 >= lengthToFetch) {
                 _continue = false;
                 fetchLength = (int) (lengthToFetch - (long) halfFetched * bufferSize / 2) / concurrentStreams;
-                newPos = pos + (long) halfFetched * bufferSize / 2 + readerId * fetchLength;
+                newPos = instreamStart + (long) halfFetched * bufferSize / 2 + readerId * fetchLength;
                 if (readerId == (concurrentStreams-1)) {
                     fetchLength = (int) (lengthToFetch - (long) halfFetched * bufferSize / 2 - (fetchLength * (concurrentStreams - 1)));
                 }
             } else {
                 fetchLength = bufferSize / (2*concurrentStreams);
-                newPos = pos + (long) halfFetched * bufferSize / 2 + readerId * fetchLength;
+                newPos = instreamStart + (long) halfFetched * bufferSize / 2 + readerId * fetchLength;
             }
             InputStream in;
             try {
