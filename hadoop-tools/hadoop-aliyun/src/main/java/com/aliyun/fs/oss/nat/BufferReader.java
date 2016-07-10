@@ -99,6 +99,7 @@ public class BufferReader {
 
     public void close() {
         LOG.info("Closing input stream for '" + key + "'.");
+        closed = true;
         try {
             if (algorithmVersion == 1) {
                 taskEngine.shutdown();
@@ -111,8 +112,6 @@ public class BufferReader {
         } catch (IOException e) {
             LOG.error("Failed to close input stream.", e);
         }
-
-        closed = true;
     }
 
     public synchronized int read() throws IOException {
@@ -485,8 +484,6 @@ public class BufferReader {
             int hasRead = 0;
             do {
                 try {
-                    LOG.info("off: " + off + ", fetchLength: " + fetchLength + ", hasRead: " + hasRead + ", buffer size " +
-                        bufferSize);
                     result = in.read(buffer, off, fetchLength-hasRead);
                     if (result > 0) {
                         off += result;
