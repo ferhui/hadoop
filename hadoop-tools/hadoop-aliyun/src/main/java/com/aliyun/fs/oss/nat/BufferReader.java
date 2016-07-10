@@ -303,9 +303,9 @@ public class BufferReader {
         this.pos = newpos;
         this.instreamStart = newpos;
         close();
+        reset();
         LOG.info("Opening key '" + key + "' for reading at position '" + newpos + "'.");
         prepareBeforeFetch();
-        reset();
     }
 
     private void reset() {
