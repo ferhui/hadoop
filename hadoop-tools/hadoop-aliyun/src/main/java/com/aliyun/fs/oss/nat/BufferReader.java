@@ -286,7 +286,7 @@ public class BufferReader {
         }
     }
 
-    public synchronized void seek(long newpos) throws Exception {
+    public synchronized void seek(long newpos) throws IOException {
         if (newpos < 0) {
             throw new EOFException(FSExceptionMessages.NEGATIVE_SEEK);
         }
