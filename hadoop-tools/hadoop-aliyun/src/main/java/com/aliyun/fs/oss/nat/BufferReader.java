@@ -46,6 +46,7 @@ public class BufferReader {
     private AtomicInteger halfConsuming = new AtomicInteger(1);
     private int algorithmVersion;
     private InputStream in;
+    private long lengthToFetch;
 
     public BufferReader(NativeFileSystemStore store, String key, Configuration conf, int algorithmVersion) throws IOException {
         this.store = store;
@@ -58,7 +59,7 @@ public class BufferReader {
     private void prepareBeforeFetch() throws IOException {
         if (algorithmVersion == 1) {
             this.fileContentLength = store.retrieveMetadata(key).getLength();
-            long lengthToFetch = fileContentLength - pos;
+            this.lengthToFetch = fileContentLength - pos;
             this.bufferSize = lengthToFetch < 16 * 1024 * 1024 ? 1024 * 1024 :
                     (lengthToFetch > 1024 * 1024 * 1024 ? 64 * 1024 * 1024 :
                             (int) (lengthToFetch / 16));
@@ -428,7 +429,6 @@ public class BufferReader {
             }
             long newPos;
             int fetchLength;
-            long lengthToFetch = fileContentLength - pos;
             if (preRead && bufferSize / 2 >= lengthToFetch) {
                 _continue = false;
                 fetchLength = (int) lengthToFetch / concurrentStreams;
