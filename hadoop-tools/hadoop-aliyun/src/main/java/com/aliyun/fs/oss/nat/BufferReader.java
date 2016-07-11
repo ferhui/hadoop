@@ -432,8 +432,8 @@ public class BufferReader {
                         Thread.sleep(100);
                     } catch (InterruptedException e) {
                     }
-                    if (i % 100 == 0) {
-                        LOG.info("[ConcurrentReader-"+readerId+"] waiting for block data to be consumed");
+                    if (i % 600 == 0) {
+                        LOG.info("[ConcurrentReader-"+readerId+"] waiting for consuming cached data.");
                     }
                 }
             }
@@ -538,10 +538,10 @@ public class BufferReader {
 
     private void progressPrint() {
         long hasRead = pos + realContentSize;
-        double currentProgress = hasRead >= (fileContentLength-1) ? 1.0d : (double) hasRead / fileContentLength;
+        double currentProgress = hasRead >= lengthToFetch ? 1.0d : (double) hasRead / lengthToFetch;
         if (currentProgress - lastProgress >= 0.1 || currentProgress == 1.0d) {
             BigDecimal b = new BigDecimal(currentProgress);
-            LOG.info("Current progress of reading '" + key + "' is " + b.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue());
+            LOG.info("Current progress of reading '" + key + " ["+instreamStart+":...]' is " + b.setScale(2, BigDecimal.ROUND_HALF_UP).doubleValue());
             lastProgress = currentProgress;
         }
 

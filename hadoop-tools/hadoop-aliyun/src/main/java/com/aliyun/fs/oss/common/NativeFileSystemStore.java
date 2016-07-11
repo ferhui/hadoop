@@ -52,6 +52,7 @@ public interface NativeFileSystemStore {
 
     void delete(String key) throws IOException;
     void copy(String srcKey, String dstKey) throws IOException;
+    void cleanup() throws Exception;
 
     String getUploadId(String dstKey) throws IOException;
     Task createOSSPutTask(File file, String finalDstKey, String uploadId, int idx) throws IOException;

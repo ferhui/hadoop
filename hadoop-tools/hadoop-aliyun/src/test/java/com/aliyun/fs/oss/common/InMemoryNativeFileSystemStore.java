@@ -165,6 +165,11 @@ public class InMemoryNativeFileSystemStore implements NativeFileSystemStore {
     }
 
     @Override
+    public void cleanup() throws Exception {
+
+    }
+
+    @Override
     public String getUploadId(String dstKey) throws IOException {
         return null;
     }

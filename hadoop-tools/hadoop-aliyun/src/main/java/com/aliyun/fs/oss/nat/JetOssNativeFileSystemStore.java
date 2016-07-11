@@ -645,4 +645,9 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
             return false;
         }
     }
+
+    @Override
+    public void cleanup() throws Exception {
+        ossClientAgent.cleanup();
+    }
 }

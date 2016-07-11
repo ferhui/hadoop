@@ -690,4 +690,11 @@ public class NativeOssFileSystem extends FileSystem {
     public Path getWorkingDirectory() {
         return workingDir;
     }
+
+    // Finalizer to ensure complete shutdown
+    @Override
+    protected void finalize() throws Throwable {
+        store.cleanup();
+        super.finalize();
+    }
 }
