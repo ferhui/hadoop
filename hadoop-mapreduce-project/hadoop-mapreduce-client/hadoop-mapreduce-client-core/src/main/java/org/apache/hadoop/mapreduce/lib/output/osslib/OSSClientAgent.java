@@ -22,6 +22,7 @@ import com.aliyun.oss.ClientException;
 import com.aliyun.oss.OSSException;
 import com.aliyun.oss.model.*;
 import com.google.gson.*;
+import org.apache.commons.lang.SystemUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
@@ -51,13 +52,7 @@ public class OSSClientAgent {
     @SuppressWarnings("unchecked")
     public OSSClientAgent(String endpoint, String accessKeyId, String accessKeySecret, Configuration conf)
             throws Exception {
-        URL ossDepsURL = getOSSDependencyURL(conf);
-        String[] cp = System.getProperty("java.class.path").split(":");
-        ArrayList<URL> urls = new ArrayList<URL>();
-        urls.add(ossDepsURL);
-        for (String entity : cp) {
-            urls.add(new URL("file://" + entity));
-        }
+        List<URL> urls = geClassLoaderURLs(conf);
         this.urlClassLoader = new URLClassLoader(urls.toArray(new URL[0]), null);
         this.ossClientClz = this.urlClassLoader.loadClass("com.aliyun.oss.OSSClient");
         Class ClientConfigurationClz = this.urlClassLoader.loadClass("com.aliyun.oss.ClientConfiguration");
@@ -69,13 +64,7 @@ public class OSSClientAgent {
     @SuppressWarnings("unchecked")
     public OSSClientAgent(String endpoint, String accessKeyId, String accessKeySecret, String securityToken,
                           Configuration conf) throws Exception {
-        URL ossDepsURL = getOSSDependencyURL(conf);
-        String[] cp = System.getProperty("java.class.path").split(":");
-        ArrayList<URL> urls = new ArrayList<URL>();
-        urls.add(ossDepsURL);
-        for (String entity : cp) {
-            urls.add(new URL("file://" + entity));
-        }
+        List<URL> urls = geClassLoaderURLs(conf);
         this.urlClassLoader = new URLClassLoader(urls.toArray(new URL[0]), null);
         this.ossClientClz = this.urlClassLoader.loadClass("com.aliyun.oss.OSSClient");
         Class ClientConfigurationClz = this.urlClassLoader.loadClass("com.aliyun.oss.ClientConfiguration");
@@ -481,11 +470,31 @@ public class OSSClientAgent {
         }
     }
 
-    private URL getOSSDependencyURL(Configuration conf) throws Exception {
-        String ossDependency = conf.get("fs.oss.sdk.dependency.path");
-        if (ossDependency == null || ossDependency.isEmpty()) {
-            throw new Exception("Can not find oss sdk dependency, please set \"fs.oss.sdk.dependency.path\" first.");
+    private List<URL> geClassLoaderURLs(Configuration conf) throws Exception {
+        String dependPath = conf.get("fs.oss.sdk.dependency.path");
+        if ((dependPath == null || dependPath.isEmpty())) {
+            throw new RuntimeException("Can not find OSS sdk dependency, please set 'fs.oss.sdk.dependency.path' first.");
         }
-        return new URL("file://"+ossDependency);
+
+        String[] sdkDeps = dependPath.split(",");
+        ArrayList<URL> urls = new ArrayList<URL>();
+        for(String dep: sdkDeps) {
+            urls.add(new URL("file://" + dep));
+        }
+
+        String[] cp;
+        if (SystemUtils.IS_OS_WINDOWS) {
+            cp = System.getProperty("java.class.path").split(";");
+            for (String entity : cp) {
+                urls.add(new URL("file:" + entity));
+            }
+        } else {
+            cp = System.getProperty("java.class.path").split(":");
+            for (String entity : cp) {
+                urls.add(new URL("file://" + entity));
+            }
+        }
+
+        return urls;
     }
 }
