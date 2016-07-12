@@ -334,7 +334,7 @@ public class FileOutputCommitter extends OutputCommitter {
     if (hasOutputPath()) {
       Path finalOutput = getOutputPath();
       Configuration conf = context.getConfiguration();
-      // set 'fs.oss.reader.concurrent.number' = 1 for fear of two many threads when do oss commit.
+      // set 'fs.oss.reader.concurrent.number' = 2 for fear of two many threads when do oss commit.
       conf.setInt("mapreduce.ossreader.algorithm.version", 2);
       FileSystem fs = finalOutput.getFileSystem(conf);
 

@@ -54,6 +54,9 @@ public class BufferReader {
         this.key = key;
         this.conf = conf;
         this.algorithmVersion = algorithmVersion;
+        if (store.retrieveMetadata(key).getLength() < 5 * 1024 * 1024) {
+            this.algorithmVersion = 2;
+        }
         prepareBeforeFetch();
     }
 
