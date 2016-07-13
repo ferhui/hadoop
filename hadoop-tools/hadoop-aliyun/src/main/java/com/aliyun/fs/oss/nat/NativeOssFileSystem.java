@@ -309,7 +309,7 @@ public class NativeOssFileSystem extends FileSystem {
         }
         this.conf = conf;
         this.algorithmVersion = conf.getInt(OSSREADER_ALGORITHM_VERSION, OSSREADER_ALGORITHM_VERSION_DEFAULT);
-        LOG.info("'mapreduce.ossreader.algorithm.version' = " + algorithmVersion);
+        LOG.info("set 'mapreduce.ossreader.algorithm.version' = " + algorithmVersion);
         if (algorithmVersion != 1 && algorithmVersion != 2) {
             throw new IOException("Only 1 or 2 algorithm version is supported");
         }

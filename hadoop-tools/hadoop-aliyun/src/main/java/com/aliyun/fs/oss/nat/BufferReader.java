@@ -57,6 +57,7 @@ public class BufferReader {
         if (store.retrieveMetadata(key).getLength() < 5 * 1024 * 1024) {
             this.algorithmVersion = 2;
         }
+        LOG.info("'mapreduce.ossreader.algorithm.version' is " + this.algorithmVersion);
         prepareBeforeFetch();
     }
 

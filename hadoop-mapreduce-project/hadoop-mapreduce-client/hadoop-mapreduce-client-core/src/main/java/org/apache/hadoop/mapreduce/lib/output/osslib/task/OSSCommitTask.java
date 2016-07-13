@@ -58,6 +58,7 @@ public class OSSCommitTask extends Task {
                         ossClientAgent.completeMultipartUpload(bucket, finalDstKey, uploadId, partETags);
                 fs.delete(uploadIdFile, true);
                 LOG.info("complete multi-part upload " + uploadId + ": [" + completeMultipartUploadResult.getETag() + "]");
+                ois.close();
             }
 
             // TODO: fail?
