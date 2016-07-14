@@ -43,14 +43,14 @@ import java.util.*;
 
 public class OSSClientAgent {
     private static final Log LOG = LogFactory.getLog(OSSClientAgent.class);
-    private URLClassLoader urlClassLoader;
+    private static URLClassLoader urlClassLoader;
     private Object ossClient;
     private Class ossClientClz;
     private Gson gson = new Gson();
     private Configuration conf;
 
     @SuppressWarnings("unchecked")
-    private URLClassLoader getUrlClassLoader(Configuration conf){
+    private synchronized static URLClassLoader getUrlClassLoader(Configuration conf){
         if(urlClassLoader == null){
             synchronized(OSSClientAgent.class){
                 if(urlClassLoader == null){
@@ -555,13 +555,6 @@ public class OSSClientAgent {
     }
 
     public void cleanup() throws Exception {
-        if (urlClassLoader != null && urlClassLoader instanceof Closeable) {
-            try {
-                LOG.info("Closing the OSS URLClassLoader");
-                urlClassLoader.close();
-            } catch (IOException e) {
-                LOG.warn("Could not close properly the OSS URLClassLoader");
-            }
-        }
+        //TODO: do some clean work.
     }
 }
