@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.aliyun.oss.model.CompleteMultipartUploadResult;
+import com.aliyun.oss.model.PartETag;
 import com.aliyun.oss.model.UploadPartResult;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
@@ -338,46 +339,13 @@ public class FileOutputCommitter extends OutputCommitter {
       conf.setInt("mapreduce.ossreader.algorithm.version", 2);
       FileSystem fs = finalOutput.getFileSystem(conf);
 
+      uploadIdFiles.clear();
       if (algorithmVersion == 1) {
         for (FileStatus stat: getAllCommittedTaskPaths(context)) {
-          doCommitJob(fs, stat, finalOutput);
-        }
-
-        if (!uploadIdFiles.isEmpty()) {
-          if (ossClientAgent == null) {
-            try {
-              ossClientAgent = getOSSClientAgent();
-            } catch (Exception e) {
-              throw new IOException("Failed to initialize an OSS client", e);
-            }
-          }
-          // use multi-thread to do multipart commit.
-          List<Task> tasks = new ArrayList<Task>();
-          List<List<Path>> subLists = bisect(uploadIdFiles, numCommitThreads);
-          for(int i=0; i<numCommitThreads; i++) {
-            Task ossCommitTask = new OSSCommitTask(fs, ossClientAgent, subLists.get(i));
-            ossCommitTask.setUuid(i+"");
-            tasks.add(ossCommitTask);
-          }
-          TaskEngine taskEngine = new TaskEngine(tasks, numCommitThreads, numCommitThreads);
-          try {
-            taskEngine.executeTask();
-            Map<String, Object> responseMap = taskEngine.getResultMap();
-            for(int i=0; i<tasks.size(); i++) {
-              Result result = (Result) responseMap.get(i+"");
-              if (!result.isSuccess()) {
-                throw new IOException("Failed to complete MultipartUpload");
-              }
-            }
-          } catch (InterruptedException e) {
-            LOG.error(e.getMessage(), e);
-          } finally {
-            taskEngine.shutdown();
-          }
-          uploadIdFiles.clear();
+          mergePaths(fs, stat, finalOutput);
         }
       }
-
+      multipartCommit(fs);
       // delete the _temporary folder and create a _done file in the o/p folder
       cleanupJob(context);
       // True if the job requires output.dir marked on successful job.
@@ -388,6 +356,83 @@ public class FileOutputCommitter extends OutputCommitter {
       }
     } else {
       LOG.warn("Output Path is null in commitJob()");
+    }
+  }
+
+  private void multipartCommit(FileSystem fs) throws IOException {
+      if (!uploadIdFiles.isEmpty()) {
+        if (ossClientAgent == null) {
+          try {
+            ossClientAgent = getOSSClientAgent();
+          } catch (Exception e) {
+            throw new IOException("Failed to initialize an OSS client", e);
+          }
+        }
+
+        if (algorithmVersion == 1) {
+          // use multi-thread to do multipart commit.
+          List<Task> tasks = new ArrayList<Task>();
+          List<List<Path>> subLists = bisect(uploadIdFiles, numCommitThreads);
+          for (int i = 0; i < numCommitThreads; i++) {
+            Task ossCommitTask = new OSSCommitTask(fs, ossClientAgent, subLists.get(i));
+            ossCommitTask.setUuid(i + "");
+            tasks.add(ossCommitTask);
+          }
+          TaskEngine taskEngine = new TaskEngine(tasks, numCommitThreads, numCommitThreads);
+          try {
+            taskEngine.executeTask();
+            Map<String, Object> responseMap = taskEngine.getResultMap();
+            for (int i = 0; i < tasks.size(); i++) {
+              Result result = (Result) responseMap.get(i + "");
+              if (!result.isSuccess()) {
+                throw new IOException("Failed to complete MultipartUpload");
+              }
+            }
+          } catch (InterruptedException e) {
+            LOG.error(e.getMessage(), e);
+          } finally {
+            taskEngine.shutdown();
+          }
+        } else {
+          InputStream in;
+          ObjectInputStream ois = null;
+          String bucket;
+          String finalDstKey = "";
+          String uploadId = "";
+          try {
+            for (Path path : uploadIdFiles) {
+              in = fs.open(path);
+              ois = new ObjectInputStream(in);
+
+              bucket = (String) ois.readObject();
+              finalDstKey = (String) ois.readObject();
+              uploadId = (String) ois.readObject();
+              List<SerializableETag> serializableETags = (List<SerializableETag>) ois.readObject();
+              List<PartETag> partETags = new ArrayList<PartETag>();
+              for (SerializableETag serializableETag : serializableETags) {
+                partETags.add(serializableETag.toPartETag());
+              }
+              CompleteMultipartUploadResult completeMultipartUploadResult =
+                      ossClientAgent.completeMultipartUpload(bucket, finalDstKey, uploadId, partETags);
+              LOG.info("complete multi-part upload " + uploadId + ": [" + completeMultipartUploadResult.getETag() + "]");
+              fs.delete(path, true);
+              ois.close();
+            }
+          } catch (Exception e) {
+            LOG.error("Failed to complete multi-part " + uploadId + ", key: " + finalDstKey, e);
+            throw new IOException("Failed to complete MultipartUpload");
+          } finally {
+            if (ois != null) {
+              try {
+                ois.close();
+              } catch (IOException e) {
+                e.printStackTrace();
+                LOG.error("Failed to close oss input stream");
+              }
+            }
+          }
+        }
+        uploadIdFiles.clear();
     }
   }
 
@@ -428,7 +473,9 @@ public class FileOutputCommitter extends OutputCommitter {
       toStat = null;
     }
 
-    if (from.isFile()) {
+    if (from.isFile() && from.getPath().getName().endsWith(".upload")) {
+      this.uploadIdFiles.add(from.getPath());
+    } else if (from.isFile()) {
       if (toStat != null) {
         if (!fs.delete(to, true)) {
           throw new IOException("Failed to delete " + to);
@@ -528,7 +575,10 @@ public class FileOutputCommitter extends OutputCommitter {
       if(taskAttemptPath == null) {
         taskAttemptPath = getTaskAttemptPath(context);
       }
-      FileSystem fs = taskAttemptPath.getFileSystem(context.getConfiguration());
+      Configuration conf = context.getConfiguration();
+      // set 'fs.oss.reader.concurrent.number' = 2 for fear of two many threads when do oss commit.
+      conf.setInt("mapreduce.ossreader.algorithm.version", 2);
+      FileSystem fs = taskAttemptPath.getFileSystem(conf);
       FileStatus taskAttemptDirStatus;
       try {
         taskAttemptDirStatus = fs.getFileStatus(taskAttemptPath);
@@ -552,9 +602,11 @@ public class FileOutputCommitter extends OutputCommitter {
               committedTaskPath);
         } else {
           // directly merge everything from taskAttemptPath to output directory
+          uploadIdFiles.clear();
           mergePaths(fs, taskAttemptDirStatus, outputPath);
           LOG.info("Saved output of task '" + attemptId + "' to " +
               outputPath);
+          multipartCommit(fs);
         }
       } else {
         LOG.warn("No Output found for " + attemptId);
@@ -632,7 +684,10 @@ public class FileOutputCommitter extends OutputCommitter {
 
       Path previousCommittedTaskPath = getCommittedTaskPath(
           previousAttempt, context);
-      FileSystem fs = previousCommittedTaskPath.getFileSystem(context.getConfiguration());
+      Configuration conf = context.getConfiguration();
+      // set 'fs.oss.reader.concurrent.number' = 2 for fear of two many threads when do oss commit.
+      conf.setInt("mapreduce.ossreader.algorithm.version", 2);
+      FileSystem fs = previousCommittedTaskPath.getFileSystem(conf);
       if (LOG.isDebugEnabled()) {
         LOG.debug("Trying to recover task from " + previousCommittedTaskPath);
       }
@@ -662,7 +717,9 @@ public class FileOutputCommitter extends OutputCommitter {
           LOG.info("Recovering task for upgrading scenario, moving files from "
               + previousCommittedTaskPath + " to " + outputPath);
           FileStatus from = fs.getFileStatus(previousCommittedTaskPath);
+          uploadIdFiles.clear();
           mergePaths(fs, from, outputPath);
+          multipartCommit(fs);
         }
         LOG.info("Done recovering task " + attemptId);
       }
@@ -723,37 +780,6 @@ public class FileOutputCommitter extends OutputCommitter {
     }
 
     return ossClientAgent;
-  }
-
-  private void doCommitJob(FileSystem fs, FileStatus stat, Path finalOutput)
-          throws IOException{
-    if (stat.isFile() && stat.getPath().getName().endsWith(".upload")) {
-      this.uploadIdFiles.add(stat.getPath());
-    } else if (stat.isFile()) {
-      if(fs.exists(finalOutput)) {
-        if(!fs.delete(finalOutput, true)) {
-          throw new IOException("Failed to delete "+finalOutput);
-        }
-      }
-
-      if(!fs.rename(stat.getPath(), finalOutput)) {
-        throw new IOException("Failed to rename "+stat+" to "+finalOutput);
-      }
-    } else if(stat.isDirectory()) {
-      FileStatus toStat = fs.getFileStatus(finalOutput);
-      if(toStat.isFile()) {
-        if(!fs.delete(finalOutput, true)) {
-          throw new IOException("Failed to delete "+finalOutput);
-        }
-        if(!fs.mkdirs(finalOutput)) {
-          throw new IOException("Failed to mkdirs "+finalOutput);
-        }
-      }
-      for (FileStatus subFrom : fs.listStatus(stat.getPath())) {
-        Path subTo = new Path(finalOutput, subFrom.getPath().getName());
-        doCommitJob(fs, subFrom, subTo);
-      }
-    }
   }
 
   private void cleanOSSUploadResidue(Path jobPath, FileSystem fs) throws IOException {
