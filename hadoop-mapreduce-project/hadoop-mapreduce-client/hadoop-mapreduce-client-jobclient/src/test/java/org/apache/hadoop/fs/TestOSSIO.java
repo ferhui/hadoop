@@ -515,6 +515,7 @@ public class TestOSSIO implements Tool {
         @Override // IOMapperBase
         public Closeable getIOStream(String name) throws IOException {
             // open file
+            FileSystem fs = FileSystem.get(new Path(getDataDir(getConf()), name).toUri(), getConf());
             InputStream in = fs.open(new Path(getDataDir(getConf()), name));
             if(compressionCodec != null)
                 in = compressionCodec.createInputStream(in);
