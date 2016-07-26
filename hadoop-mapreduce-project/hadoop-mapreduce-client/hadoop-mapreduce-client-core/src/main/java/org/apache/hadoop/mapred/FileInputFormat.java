@@ -197,11 +197,14 @@ public abstract class FileInputFormat<K, V> implements InputFormat<K, V> {
    * @throws IOException if zero items.
    */
   protected FileStatus[] listStatus(JobConf job) throws IOException {
+    long time1 = System.currentTimeMillis();
     Path[] dirs = getInputPaths(job);
     if (dirs.length == 0) {
       throw new IOException("No input paths specified in job");
     }
 
+    long time2 = System.currentTimeMillis();
+    LOG.info("time1 -> time2: " + (time2-time1));
     // get tokens for all the required FileSystems..
     TokenCache.obtainTokensForNamenodes(job.getCredentials(), dirs, job);
     
@@ -228,6 +231,8 @@ public abstract class FileInputFormat<K, V> implements InputFormat<K, V> {
     if (numThreads == 1) {
       List<FileStatus> locatedFiles = singleThreadedListStatus(job, dirs, inputFilter, recursive); 
       result = locatedFiles.toArray(new FileStatus[locatedFiles.size()]);
+      long time3 = System.currentTimeMillis();
+      LOG.info("singleThreadedListStatus: time2->time3: " + (time3-time2));
     } else {
       Iterable<FileStatus> locatedFiles = null;
       try {
@@ -239,6 +244,8 @@ public abstract class FileInputFormat<K, V> implements InputFormat<K, V> {
         throw new IOException("Interrupted while getting file statuses");
       }
       result = Iterables.toArray(locatedFiles, FileStatus.class);
+      long time3 = System.currentTimeMillis();
+      LOG.info("LocatedFileStatusFetcher: time2->time3: " + (time3-time2));
     }
 
     sw.stop();
@@ -255,13 +262,17 @@ public abstract class FileInputFormat<K, V> implements InputFormat<K, V> {
     List<FileStatus> result = new ArrayList<FileStatus>();
     List<IOException> errors = new ArrayList<IOException>();
     for (Path p: dirs) {
-      FileSystem fs = p.getFileSystem(job); 
+      FileSystem fs = p.getFileSystem(job);
+      long start = System.currentTimeMillis();
       FileStatus[] matches = fs.globStatus(p, inputFilter);
+      long end = System.currentTimeMillis();
+      System.out.println("list " + p + " costs: " + (end-start));
       if (matches == null) {
         errors.add(new IOException("Input path does not exist: " + p));
       } else if (matches.length == 0) {
         errors.add(new IOException("Input Pattern " + p + " matches 0 files"));
       } else {
+        start = System.currentTimeMillis();
         for (FileStatus globStat: matches) {
           if (globStat.isDirectory()) {
             RemoteIterator<LocatedFileStatus> iter =
@@ -281,6 +292,8 @@ public abstract class FileInputFormat<K, V> implements InputFormat<K, V> {
             result.add(globStat);
           }
         }
+        end = System.currentTimeMillis();
+        System.out.println("list " + p + " costs: " + (end-start));
       }
     }
     if (!errors.isEmpty()) {
@@ -316,7 +329,7 @@ public abstract class FileInputFormat<K, V> implements InputFormat<K, V> {
     FileStatus[] files = listStatus(job);
 
     long start1 = System.currentTimeMillis();
-    LOG.info("listStatus costs: " + (start1 - start0)/1000);
+    LOG.info("listStatus costs: " + (start1 - start0));
     // Save the number of input files for metrics/loadgen
     job.setLong(NUM_INPUT_FILES, files.length);
     long totalSize = 0;                           // compute total size
