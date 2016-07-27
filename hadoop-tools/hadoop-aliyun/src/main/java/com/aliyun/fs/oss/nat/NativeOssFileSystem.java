@@ -692,6 +692,48 @@ public class NativeOssFileSystem extends FileSystem {
         return workingDir;
     }
 
+    @Override
+    public RemoteIterator<LocatedFileStatus> listLocatedStatus(final Path f)
+            throws FileNotFoundException, IOException {
+        return listLocatedStatus(f, DEFAULT_FILTER);
+    }
+
+    @Override
+    protected RemoteIterator<LocatedFileStatus> listLocatedStatus(final Path f,
+                                                                  final PathFilter filter)
+            throws FileNotFoundException, IOException {
+        return new RemoteIterator<LocatedFileStatus>() {
+            private final FileStatus[] stats = listStatus(f, filter);
+            private int i = 0;
+            private String[] name = { "localhost:50010" };
+            private String[] host = { "localhost" };
+
+            @Override
+            public boolean hasNext() {
+                return i<stats.length;
+            }
+
+            @Override
+            public LocatedFileStatus next() throws IOException {
+                if (!hasNext()) {
+                    throw new NoSuchElementException("No more entry in " + f);
+                }
+                FileStatus result = stats[i++];
+                BlockLocation[] defaultBlockLocations = new BlockLocation[] {
+                        new BlockLocation(name, host, 0, result.getLen()) };
+                BlockLocation[] locs = result.isFile() ? defaultBlockLocations : null;
+                return new LocatedFileStatus(result, locs);
+            }
+        };
+    }
+
+    final private static PathFilter DEFAULT_FILTER = new PathFilter() {
+        @Override
+        public boolean accept(Path file) {
+            return true;
+        }
+    };
+
     // Finalizer to ensure complete shutdown
     @Override
     protected void finalize() throws Throwable {
