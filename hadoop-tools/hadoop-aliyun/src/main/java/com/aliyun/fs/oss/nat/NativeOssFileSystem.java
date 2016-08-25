@@ -244,9 +244,9 @@ public class NativeOssFileSystem extends FileSystem {
                     finalOutputPath = conf.get("mapred.output.dir");
                 }
 
-                String subKey = key.substring(0, key.lastIndexOf("/"));
-                if (redirectOutput && finalOutputPath!= null && finalOutputPath.lastIndexOf(subKey) + subKey.length == finalOutputPath.length) {
-                    String finalDstPath = finalOutputPath + "/" + subKey;
+                int subKeyIndex = key.substring(0, key.lastIndexOf("/_temporary")).lastIndexOf("/_temporary");
+                if (redirectOutput && finalOutputPath!= null && finalOutputPath.lastIndexOf(key.substring(0, subKeyIndex)) + subKeyIndex == finalOutputPath.length()) {
+                    String finalDstPath = finalOutputPath + "/" + key.substring(key.lastIndexOf("/"));
                     String finalDstKey = NativeOssFileSystem.pathToKey(new Path(finalDstPath));
                     uploadId = store.getUploadId(finalDstKey);
                     store.preStoreUploadId(key, finalDstKey, uploadId);
