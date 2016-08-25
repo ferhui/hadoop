@@ -324,9 +324,9 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
                         finalOutputPath = conf.get("mapred.output.dir");
                     }
                     
-                    String subKey = key.substring(0, key.lastIndexOf("/"));
-                    if (redirectOutput && finalOutputPath != null && finalOutputPath.lastIndexOf(subKey) + subKey.length == finalOutputPath.length) {
-                        String finalDstPath = finalOutputPath + "/" + subKey;
+                    int subKeyIndex = key.substring(0, key.lastIndexOf("/_temporary")).lastIndexOf("/_temporary");
+                    if (redirectOutput && finalOutputPath!= null && finalOutputPath.lastIndexOf(key.substring(0, subKeyIndex)) + subKeyIndex == finalOutputPath.length()) {
+                        String finalDstPath = finalOutputPath + "/" + key.substring(key.lastIndexOf("/"));
                         String finalDstKey = NativeOssFileSystem.pathToKey(new Path(finalDstPath));
                         InitiateMultipartUploadResult initiateMultipartUploadResult =
                                 ossClientAgent.initiateMultipartUpload(bucket, finalDstKey, conf);
@@ -371,9 +371,9 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
                     // 2. hadoop fs -cp: get 'OUTDIR' null
                     boolean redirectOutput = conf.getBoolean("job.output.oss.redirect", true);
                     String finalOutputPath = conf.get(FileOutputFormat.OUTDIR);
-                    String subKey = key.substring(0, key.lastIndexOf("/"));
-                    if (redirectOutput && finalOutputPath != null && finalOutputPath.lastIndexOf(subKey) + subKey.length == finalOutputPath.length) {
-                        String finalDstPath = finalOutputPath + "/" + subKey;
+                    int subKeyIndex = key.substring(0, key.lastIndexOf("/_temporary")).lastIndexOf("/_temporary");
+                    if (redirectOutput && finalOutputPath!= null && finalOutputPath.lastIndexOf(key.substring(0, subKeyIndex)) + subKeyIndex == finalOutputPath.length()) {
+                        String finalDstPath = finalOutputPath + "/" + key.substring(key.lastIndexOf("/"));
                         String finalDstKey = NativeOssFileSystem.pathToKey(new Path(finalDstPath));
                         InitiateMultipartUploadResult initiateMultipartUploadResult =
                                 ossClientAgent.initiateMultipartUpload(bucket, finalDstKey, conf);
