@@ -323,9 +323,10 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
                     if (finalOutputPath == null || finalOutputPath.isEmpty()) {
                         finalOutputPath = conf.get("mapred.output.dir");
                     }
-
-                    if (redirectOutput && finalOutputPath!=null) {
-                        String finalDstPath = finalOutputPath + "/" + key.substring(key.lastIndexOf("/"));
+                    
+                    String subKey = key.substring(0, key.lastIndexOf("/"));
+                    if (redirectOutput && finalOutputPath != null && finalOutputPath.lastIndexOf(subKey) + subKey.length == finalOutputPath.length) {
+                        String finalDstPath = finalOutputPath + "/" + subKey;
                         String finalDstKey = NativeOssFileSystem.pathToKey(new Path(finalDstPath));
                         InitiateMultipartUploadResult initiateMultipartUploadResult =
                                 ossClientAgent.initiateMultipartUpload(bucket, finalDstKey, conf);
