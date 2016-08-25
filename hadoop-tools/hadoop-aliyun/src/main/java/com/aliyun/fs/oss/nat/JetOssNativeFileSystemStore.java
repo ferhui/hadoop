@@ -371,8 +371,9 @@ public class JetOssNativeFileSystemStore implements NativeFileSystemStore {
                     // 2. hadoop fs -cp: get 'OUTDIR' null
                     boolean redirectOutput = conf.getBoolean("job.output.oss.redirect", true);
                     String finalOutputPath = conf.get(FileOutputFormat.OUTDIR);
-                    if (redirectOutput && finalOutputPath!=null) {
-                        String finalDstPath = finalOutputPath + "/" + key.substring(key.lastIndexOf("/"));
+                    String subKey = key.substring(0, key.lastIndexOf("/"));
+                    if (redirectOutput && finalOutputPath != null && finalOutputPath.lastIndexOf(subKey) + subKey.length == finalOutputPath.length) {
+                        String finalDstPath = finalOutputPath + "/" + subKey;
                         String finalDstKey = NativeOssFileSystem.pathToKey(new Path(finalDstPath));
                         InitiateMultipartUploadResult initiateMultipartUploadResult =
                                 ossClientAgent.initiateMultipartUpload(bucket, finalDstKey, conf);
