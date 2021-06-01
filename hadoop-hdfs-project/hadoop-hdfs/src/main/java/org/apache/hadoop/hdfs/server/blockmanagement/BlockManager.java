@@ -1868,7 +1868,7 @@ public class BlockManager implements BlockStatsMXBean {
         // stale storage due to failover or any other reason.
         corruptReplicas.removeFromCorruptReplicasMap(b.getStored(), node);
         BlockInfoStriped blk = (BlockInfoStriped) getStoredBlock(b.getStored());
-        blk.removeStorage(storageInfo);
+        storageInfo.removeBlock(blk);
       }
       // the block is over-replicated so invalidate the replicas immediately
       invalidateBlock(b, node, numberOfReplicas);
